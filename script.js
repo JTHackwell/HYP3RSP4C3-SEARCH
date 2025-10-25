@@ -326,6 +326,13 @@ class HyperSpaceBrowser {
                     padding: 20px; 
                     margin-bottom: 15px; 
                     border-radius: 5px;
+                    cursor: pointer;
+                    transition: all 0.3s ease;
+                }
+                .result-item:hover {
+                    border-color: #00ffff;
+                    background: #2a2a2a;
+                    box-shadow: 0 0 15px rgba(0, 255, 255, 0.3);
                 }
                 .result-title { 
                     color: #00ffff; 
@@ -341,6 +348,20 @@ class HyperSpaceBrowser {
                     color: #ccc; 
                     line-height: 1.5; 
                 }
+                .navigate-btn {
+                    background: linear-gradient(135deg, #00ff41, #00ffff);
+                    color: #0a0a0a;
+                    border: none;
+                    padding: 8px 16px;
+                    border-radius: 3px;
+                    cursor: pointer;
+                    font-weight: bold;
+                    margin-top: 10px;
+                    margin-right: 10px;
+                }
+                .navigate-btn:hover {
+                    background: linear-gradient(135deg, #00ffff, #00ff41);
+                }
             </style>
         </head>
         <body>
@@ -350,6 +371,9 @@ class HyperSpaceBrowser {
                 <br>
                 <button class="search-btn" onclick="performSearch()">SEARCH</button>
                 <button class="search-btn" onclick="openGoogle()">OPEN GOOGLE</button>
+                <div style="margin-top: 20px; font-size: 12px; color: #666;">
+                    <strong>SEARCH TIPS:</strong> Try searching for "youtube", "github", "reddit", or any website name
+                </div>
                 
                 <div class="results" id="results">
                     ${query ? this.generateMockResults(query) : '<p style="text-align:center; color:#666;">Enter a search query above to begin infiltrating the data matrix...</p>'}
@@ -360,8 +384,101 @@ class HyperSpaceBrowser {
                 function performSearch() {
                     const query = document.querySelector('.search-box').value;
                     if (query.trim()) {
-                        parent.hyperspaceBrowser.navigate('https://www.google.com/search?q=' + encodeURIComponent(query));
+                        // Update the results with the new search
+                        updateSearchResults(query);
                     }
+                }
+                
+                function updateSearchResults(query) {
+                    const resultsDiv = document.getElementById('results');
+                    resultsDiv.innerHTML = generateResults(query);
+                }
+                
+                function generateResults(query) {
+                    const results = getSearchResults(query);
+                    return results.map(result => 
+                        '<div class="result-item">' +
+                            '<div class="result-title">' + result.title + '</div>' +
+                            '<div class="result-url">' + result.url + '</div>' +
+                            '<div class="result-desc">' + result.desc + '</div>' +
+                            '<button class="navigate-btn" onclick="navigateToSite(\\'' + result.url + '\\')">INFILTRATE TARGET</button>' +
+                            '<button class="navigate-btn" onclick="window.open(\\'' + result.url + '\\', \\'_blank\\')">OPEN EXTERNALLY</button>' +
+                        '</div>'
+                    ).join('');
+                }
+                
+                function getSearchResults(query) {
+                    const lowerQuery = query.toLowerCase();
+                    
+                    // Create smart results based on the search query
+                    const results = [];
+                    
+                    // Check for specific sites
+                    if (lowerQuery.includes('youtube')) {
+                        results.push({
+                            title: 'YouTube - Video Platform',
+                            url: 'https://www.youtube.com',
+                            desc: 'Watch videos, subscribe to channels, and discover content from creators worldwide.'
+                        });
+                    }
+                    
+                    if (lowerQuery.includes('github')) {
+                        results.push({
+                            title: 'GitHub - Code Repository',
+                            url: 'https://github.com',
+                            desc: 'Host and review code, manage projects, and collaborate with millions of developers.'
+                        });
+                    }
+                    
+                    if (lowerQuery.includes('stackoverflow') || lowerQuery.includes('stack overflow')) {
+                        results.push({
+                            title: 'Stack Overflow - Developer Q&A',
+                            url: 'https://stackoverflow.com',
+                            desc: 'Get answers to programming questions and share knowledge with the developer community.'
+                        });
+                    }
+                    
+                    if (lowerQuery.includes('reddit')) {
+                        results.push({
+                            title: 'Reddit - Front Page of the Internet',
+                            url: 'https://www.reddit.com',
+                            desc: 'Dive into communities, discussions, and content from around the world.'
+                        });
+                    }
+                    
+                    if (lowerQuery.includes('twitter')) {
+                        results.push({
+                            title: 'Twitter - Social Network',
+                            url: 'https://twitter.com',
+                            desc: 'Connect with people and discover what\\'s happening in the world right now.'
+                        });
+                    }
+                    
+                    // Add generic results
+                    results.push({
+                        title: query + ' - Official Site',
+                        url: 'https://www.' + query.toLowerCase().replace(/\\s+/g, '') + '.com',
+                        desc: 'Official website for ' + query + '. Find authentic information and services.'
+                    });
+                    
+                    results.push({
+                        title: query + ' - Wikipedia',
+                        url: 'https://en.wikipedia.org/wiki/' + query.replace(/\\s+/g, '_'),
+                        desc: 'Wikipedia encyclopedia article about ' + query + ' with detailed information and references.'
+                    });
+                    
+                    results.push({
+                        title: query + ' - News & Updates',
+                        url: 'https://www.google.com/search?q=' + encodeURIComponent(query + ' news'),
+                        desc: 'Latest news, updates and information about ' + query + ' from various sources.'
+                    });
+                    
+                    return results.slice(0, 6); // Return top 6 results
+                }
+                
+                function navigateToSite(url) {
+                    // Navigate through the HYP3RSP4C3 browser
+                    parent.hyperspaceBrowser.navigate(url);
                 }
                 
                 function openGoogle() {
@@ -382,30 +499,115 @@ class HyperSpaceBrowser {
     }
 
     generateMockResults(query) {
-        const mockResults = [{
-                title: `${query} - Official Site`,
-                url: `https://www.${query.toLowerCase().replace(/\s+/g, '')}.com`,
-                desc: `Official website and resources for ${query}. Find comprehensive information, documentation, and services.`
-            },
-            {
-                title: `${query} - Wikipedia`,
-                url: `https://en.wikipedia.org/wiki/${query.replace(/\s+/g, '_')}`,
-                desc: `Wikipedia article about ${query}. Free encyclopedia entry with detailed information and references.`
-            },
-            {
-                title: `${query} Documentation`,
-                url: `https://docs.${query.toLowerCase().replace(/\s+/g, '')}.com`,
-                desc: `Technical documentation and guides for ${query}. Learn how to use and implement effectively.`
-            }
-        ];
+        // This method now creates the initial results HTML
+        // The JavaScript in the iframe will handle dynamic updates
+        const results = this.getSmartResults(query);
 
-        return mockResults.map(result => `
+        return results.map(result => `
             <div class="result-item">
                 <div class="result-title">${result.title}</div>
                 <div class="result-url">${result.url}</div>
                 <div class="result-desc">${result.desc}</div>
+                <button class="navigate-btn" onclick="navigateToSite('${result.url}')">INFILTRATE TARGET</button>
+                <button class="navigate-btn" onclick="window.open('${result.url}', '_blank')">OPEN EXTERNALLY</button>
             </div>
         `).join('');
+    }
+
+    getSmartResults(query) {
+        const lowerQuery = query.toLowerCase();
+        const results = [];
+
+        // Check for specific popular sites
+        if (lowerQuery.includes('youtube')) {
+            results.push({
+                title: 'YouTube - Video Platform',
+                url: 'https://www.youtube.com',
+                desc: 'Watch videos, subscribe to channels, and discover content from creators worldwide.'
+            });
+        }
+
+        if (lowerQuery.includes('github')) {
+            results.push({
+                title: 'GitHub - Code Repository',
+                url: 'https://github.com',
+                desc: 'Host and review code, manage projects, and collaborate with millions of developers.'
+            });
+        }
+
+        if (lowerQuery.includes('stackoverflow') || lowerQuery.includes('stack overflow')) {
+            results.push({
+                title: 'Stack Overflow - Developer Q&A',
+                url: 'https://stackoverflow.com',
+                desc: 'Get answers to programming questions and share knowledge with the developer community.'
+            });
+        }
+
+        if (lowerQuery.includes('reddit')) {
+            results.push({
+                title: 'Reddit - Front Page of the Internet',
+                url: 'https://www.reddit.com',
+                desc: 'Dive into communities, discussions, and content from around the world.'
+            });
+        }
+
+        if (lowerQuery.includes('twitter') || lowerQuery.includes('x.com')) {
+            results.push({
+                title: 'X (Twitter) - Social Network',
+                url: 'https://x.com',
+                desc: 'Connect with people and discover what\'s happening in the world right now.'
+            });
+        }
+
+        if (lowerQuery.includes('facebook')) {
+            results.push({
+                title: 'Facebook - Social Network',
+                url: 'https://www.facebook.com',
+                desc: 'Connect with friends and the world around you on Facebook.'
+            });
+        }
+
+        if (lowerQuery.includes('netflix')) {
+            results.push({
+                title: 'Netflix - Streaming Service',
+                url: 'https://www.netflix.com',
+                desc: 'Watch TV shows and movies anytime, anywhere on your favorite devices.'
+            });
+        }
+
+        if (lowerQuery.includes('amazon')) {
+            results.push({
+                title: 'Amazon - Online Shopping',
+                url: 'https://www.amazon.com',
+                desc: 'Shop online for electronics, books, home & garden and more on Amazon.'
+            });
+        }
+
+        // Always add some generic results
+        results.push({
+            title: `${query} - Official Site`,
+            url: `https://www.${query.toLowerCase().replace(/\s+/g, '')}.com`,
+            desc: `Official website for ${query}. Find authentic information and services.`
+        });
+
+        results.push({
+            title: `${query} - Wikipedia`,
+            url: `https://en.wikipedia.org/wiki/${query.replace(/\s+/g, '_')}`,
+            desc: `Wikipedia encyclopedia article about ${query} with detailed information and references.`
+        });
+
+        results.push({
+            title: `${query} - Search Results`,
+            url: `https://www.google.com/search?q=${encodeURIComponent(query)}`,
+            desc: `Google search results for ${query}. Find the most relevant information across the web.`
+        });
+
+        // Return top 6 unique results
+        const uniqueResults = results.filter((result, index, self) =>
+            index === self.findIndex(r => r.url === result.url)
+        );
+
+        return uniqueResults.slice(0, 6);
     }
 
     tryProxyServices(url, proxyServices, index) {
