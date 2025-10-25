@@ -23,11 +23,13 @@
 
 body {
     font-family: 'Source Code Pro', monospace;
-    background: var(--primary-bg);
-    color: var(--text-primary);
+    background: #0a0a0a !important;
+    color: #00ff41 !important;
     overflow: hidden;
     position: relative;
     height: 100vh;
+    margin: 0;
+    padding: 0;
 }
 
 
@@ -52,6 +54,7 @@ body {
     height: 100vh;
     position: relative;
     z-index: 1;
+    background: #0a0a0a !important;
 }
 
 
@@ -62,9 +65,10 @@ body {
     justify-content: space-between;
     align-items: center;
     padding: 8px 16px;
-    background: linear-gradient(135deg, var(--secondary-bg), var(--accent-bg));
-    border-bottom: 2px solid var(--neon-green);
-    box-shadow: 0 0 10px var(--glow-color);
+    background: linear-gradient(135deg, #1a1a1a, #2a2a2a) !important;
+    border-bottom: 2px solid #00ff41 !important;
+    box-shadow: 0 0 10px rgba(0, 255, 65, 0.3) !important;
+    color: #00ff41 !important;
 }
 
 .header-left {
@@ -147,6 +151,22 @@ body {
 .separator {
     margin: 0 8px;
     color: var(--neon-cyan);
+}
+
+.tor-indicator {
+    color: #8b5dff;
+    font-weight: bold;
+    text-shadow: 0 0 5px rgba(139, 93, 255, 0.6);
+}
+
+.tor-indicator.active {
+    color: #00ff41;
+    text-shadow: 0 0 5px rgba(0, 255, 65, 0.6);
+}
+
+.tor-indicator.inactive {
+    color: #ff6b6b;
+    text-shadow: 0 0 5px rgba(255, 107, 107, 0.6);
 }
 
 

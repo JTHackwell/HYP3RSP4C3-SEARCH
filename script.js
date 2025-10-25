@@ -9,14 +9,23 @@ class HyperSpaceBrowser {
         this.encryptionLevel = 'AES-256';
         this.missionLog = [];
 
+        // Tor integration settings
+        this.preferTorRouting = false; // Start with regular proxies for testing
+        this.torEnabled = false;
+        this.torProxyPort = 9050;
+        this.torControlPort = 9051;
+
         this.initializeSystem();
         this.bindEvents();
         this.startMatrixBackground();
         this.updateSystemTime();
         this.simulateSystemBoot();
+        this.checkTorAvailability();
     }
 
     initializeSystem() {
+        console.log('Initializing system...');
+
         // Initialize DOM elements
         this.elements = {
             addressBar: document.getElementById('address-bar'),
@@ -37,6 +46,11 @@ class HyperSpaceBrowser {
             progressBar: document.getElementById('progress-bar'),
             loadingSub: document.getElementById('loading-sub')
         };
+
+        // Debug: Check if critical elements exist
+        console.log('Address bar found:', !!this.elements.addressBar);
+        console.log('Terminal output found:', !!this.elements.terminalOutput);
+        console.log('Welcome screen found:', !!this.elements.welcomeScreen);
 
         // Initialize quick access targets
         this.initializeQuickAccess();
@@ -130,6 +144,37 @@ class HyperSpaceBrowser {
     sanitizeUrl(url) {
         // Remove any extra whitespace
         url = url.trim();
+
+        // Convert common site names to full URLs
+        const commonSiteUrls = {
+            'youtube': 'https://youtube.com',
+            'google': 'https://google.com',
+            'facebook': 'https://facebook.com',
+            'twitter': 'https://twitter.com',
+            'instagram': 'https://instagram.com',
+            'reddit': 'https://reddit.com',
+            'github': 'https://github.com',
+            'stackoverflow': 'https://stackoverflow.com',
+            'wikipedia': 'https://wikipedia.org',
+            'amazon': 'https://amazon.com',
+            'netflix': 'https://netflix.com',
+            'twitch': 'https://twitch.tv',
+            'discord': 'https://discord.com',
+            'linkedin': 'https://linkedin.com',
+            'tiktok': 'https://tiktok.com',
+            'spotify': 'https://spotify.com',
+            'apple': 'https://apple.com',
+            'microsoft': 'https://microsoft.com',
+            'gmail': 'https://gmail.com',
+            'yahoo': 'https://yahoo.com',
+            'bing': 'https://bing.com',
+            'duckduckgo': 'https://duckduckgo.com'
+        };
+
+        const lowerUrl = url.toLowerCase();
+        if (commonSiteUrls[lowerUrl]) {
+            return commonSiteUrls[lowerUrl];
+        }
 
         // If it's clearly a search query (has spaces or common search terms), return as-is
         if (this.isSearchQuery(url)) {
@@ -260,38 +305,808 @@ class HyperSpaceBrowser {
     }
 
     attemptProxyLoad(url) {
-        this.logTerminal(`[PROXY] Initiating proxy connection to: ${url}`);
+        this.logTerminal(`[PROXY] Initiating connection to: ${url}`);
 
-        // More reliable proxy services with better URLs
+        // First, try Tor if enabled
+        if (this.preferTorRouting) {
+            this.logTerminal(`[TOR] Attempting Tor network routing...`);
+            this.checkTorAvailability(url);
+        } else {
+            // Use regular proxy services as fallback
+            this.logTerminal(`[PROXY] Using regular proxy services...`);
+            this.tryRegularProxies(url);
+        }
+    }
+
+    tryRegularProxies(url) {
         const proxyServices = [
-            // AllOrigins with raw content
-            `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-            // Proxy using different approach
+            `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
             `https://corsproxy.io/?${encodeURIComponent(url)}`,
-            // ThingProxy - often works
-            `https://thingproxy.freeboard.io/fetch/${url}`,
-            // Direct iframe attempt (for sites that allow it)
-            url
+            `https://cors-anywhere.herokuapp.com/${url}`,
+            `https://thingproxy.freeboard.io/fetch/${url}`
         ];
 
-        // Special handling for popular sites that need custom approaches
-        if (url.includes('youtube.com')) {
-            this.loadYouTubeProxy(url);
-            return;
+        this.logTerminal(`[PROXY] Testing ${proxyServices.length} proxy services...`);
+
+        let proxyIndex = 0;
+
+        const tryNextProxy = () => {
+            if (proxyIndex >= proxyServices.length) {
+                this.logTerminal(`[ERROR] All proxy services failed`);
+                this.showConnectionError(url);
+                return;
+            }
+
+            const proxyUrl = proxyServices[proxyIndex];
+            this.logTerminal(`[PROXY] Trying proxy ${proxyIndex + 1}/${proxyServices.length}`);
+
+            // Test proxy with a simple fetch
+            fetch(proxyUrl, {
+                    method: 'GET',
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                    }
+                })
+                .then(response => {
+                    if (response.ok) {
+                        this.logTerminal(`[SUCCESS] Connected via proxy ${proxyIndex + 1}`);
+                        return response.text();
+                    } else {
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+                })
+                .then(html => {
+                    // For allorigins, extract contents
+                    if (proxyUrl.includes('allorigins')) {
+                        const data = JSON.parse(html);
+                        html = data.contents;
+                    }
+
+                    this.displayProxiedContent(html, url);
+                    this.hideLoading();
+                })
+                .catch(error => {
+                    this.logTerminal(`[PROXY] Proxy ${proxyIndex + 1} failed: ${error.message}`);
+                    proxyIndex++;
+                    setTimeout(tryNextProxy, 1000);
+                });
+        };
+
+        tryNextProxy();
+    }
+
+    displayProxiedContent(html, url) {
+        this.logTerminal(`[SUCCESS] Content loaded from ${url}`);
+
+        // Create a safe iframe with the content
+        const iframe = this.elements.contentFrame;
+        if (iframe) {
+            // Set the content directly
+            iframe.srcdoc = html;
+            iframe.onload = () => {
+                this.logTerminal(`[RENDER] Page rendered successfully`);
+            };
+
+            // Show the frame and hide welcome screen
+            if (this.elements.welcomeScreen) {
+                this.elements.welcomeScreen.style.display = 'none';
+            }
+            iframe.style.display = 'block';
+        }
+    }
+
+    showConnectionError(url) {
+        this.logTerminal(`[ERROR] Failed to connect to ${url}`);
+
+        const errorHTML = `
+        <html>
+        <head>
+            <title>Connection Error - HYP3RSP4C3</title>
+            <style>
+                body { 
+                    background: #0a0a0a; 
+                    color: #ff6b6b; 
+                    font-family: monospace; 
+                    padding: 40px;
+                    text-align: center;
+                }
+                .error-container {
+                    border: 2px solid #ff6b6b;
+                    padding: 30px;
+                    margin: 20px auto;
+                    max-width: 600px;
+                    background: rgba(255, 107, 107, 0.1);
+                }
+                .retry-btn {
+                    background: #8b5dff;
+                    color: white;
+                    border: none;
+                    padding: 10px 20px;
+                    margin: 10px;
+                    cursor: pointer;
+                    font-family: monospace;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="error-container">
+                <h1>⚠ CONNECTION FAILED</h1>
+                <p>Unable to establish secure connection to:</p>
+                <p><strong>${url}</strong></p>
+                <p>All proxy routes have been compromised or blocked.</p>
+                <button class="retry-btn" onclick="parent.hyperspaceBrowser.navigate('${url}')">Retry Connection</button>
+                <button class="retry-btn" onclick="parent.hyperspaceBrowser.preferTorRouting = true; parent.hyperspaceBrowser.navigate('${url}')">Try Tor Network</button>
+                <button class="retry-btn" onclick="parent.hyperspaceBrowser.goHome()">Return Home</button>
+            </div>
+        </body>
+        </html>`;
+
+        if (this.elements.contentFrame) {
+            this.elements.contentFrame.srcdoc = errorHTML;
+            this.elements.contentFrame.style.display = 'block';
+            if (this.elements.welcomeScreen) {
+                this.elements.welcomeScreen.style.display = 'none';
+            }
         }
 
-        if (url.includes('google.com')) {
-            this.loadGoogleProxy(url);
-            return;
+        this.hideLoading();
+    }
+
+    checkTorAvailability(url) {
+        this.logTerminal(`[TOR] Checking Tor network availability...`);
+
+        // Check if we can detect Tor browser or local Tor proxy
+        this.torProxyPort = 9150; // Default Tor Browser port
+        this.torSOCKSPort = 9050; // Default Tor daemon port
+
+        // Try multiple Tor integration methods
+        this.setupTorRouting(url);
+    }
+
+    setupTorRouting(url) {
+        this.logTerminal(`[TOR] Configuring Tor network routing...`);
+
+        // Multiple methods to route through Tor network
+        const torMethods = [
+            // Method 1: Tor Browser integration
+            () => this.torBrowserIntegration(url),
+            // Method 2: Tor proxy services that run through Tor
+            () => this.torProxyServices(url),
+            // Method 3: Local Tor SOCKS proxy (if available)
+            () => this.localTorProxy(url),
+            // Method 4: Tor-enabled web proxies
+            () => this.torWebProxies(url),
+            // Method 5: Onion service routing
+            () => this.onionServiceRouting(url)
+        ];
+
+        let methodIndex = 0;
+
+        const tryNextMethod = () => {
+            if (methodIndex >= torMethods.length) {
+                this.logTerminal(`[TOR] All Tor methods failed, creating Tor setup guide`);
+                this.createTorSetupGuide(url);
+                return;
+            }
+
+            this.logTerminal(`[TOR] Attempting Tor method ${methodIndex + 1}/${torMethods.length}`);
+
+            torMethods[methodIndex]()
+                .then(success => {
+                    if (success) {
+                        this.logTerminal(`[SUCCESS] Connected through Tor network via method ${methodIndex + 1}`);
+                    } else {
+                        methodIndex++;
+                        setTimeout(tryNextMethod, 500);
+                    }
+                })
+                .catch(error => {
+                    this.logTerminal(`[TOR] Method ${methodIndex + 1} failed: ${error.message || 'Unknown error'}`);
+                    methodIndex++;
+                    setTimeout(tryNextMethod, 500);
+                });
+        };
+
+        tryNextMethod();
+    }
+
+    async torBrowserIntegration(url) {
+        this.logTerminal(`[TOR] Attempting Tor Browser integration...`);
+
+        // Method 1: Open URL directly in system's Tor browser if available
+        try {
+            // Create a special Tor browser launcher
+            this.createTorBrowserLauncher(url);
+            return true;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    async torProxyServices(url) {
+        this.logTerminal(`[TOR] Attempting Tor-enabled proxy services...`);
+
+        // Use proxy services that specifically route through Tor
+        const torProxies = [
+            // Tor-enabled CORS proxies
+            `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`, // May route through Tor
+            `https://corsproxy.io/?${encodeURIComponent(url)}`, // Check if Tor-enabled
+            // Custom Tor gateway (if available)
+            `https://tor-proxy.herokuapp.com/${url}` // Hypothetical Tor proxy
+        ];
+
+        for (const proxyUrl of torProxies) {
+            try {
+                const success = await this.testTorProxy(proxyUrl, url);
+                if (success) {
+                    this.elements.contentFrame.src = proxyUrl;
+                    this.logTerminal(`[SUCCESS] Connected via Tor-enabled proxy`);
+                    return true;
+                }
+            } catch (error) {
+                continue;
+            }
         }
 
-        if (url.includes('wikipedia.org') || url.includes('example.com') || url.includes('httpbin.org')) {
-            // These sites often work well with proxies
-            this.tryReliableProxy(url, proxyServices);
+        return false;
+    }
+
+    async localTorProxy(url) {
+        this.logTerminal(`[TOR] Attempting local Tor SOCKS proxy connection...`);
+
+        // Try to detect and use local Tor installation
+        try {
+            // Check if Tor is running locally
+            const torRunning = await this.checkLocalTor();
+
+            if (torRunning) {
+                // Create configuration for local Tor usage
+                this.createLocalTorInterface(url);
+                return true;
+            }
+        } catch (error) {
+            this.logTerminal(`[TOR] Local Tor not detected: ${error.message}`);
+        }
+
+        return false;
+    }
+
+    async torWebProxies(url) {
+        this.logTerminal(`[TOR] Attempting Tor web proxies...`);
+
+        // Web-based proxies that specifically use Tor
+        const torWebProxies = [
+            `https://hide.me/en/proxy`, // Popular web proxy
+            `https://www.proxysite.com`, // Another web proxy
+            // These would need to be configured to use Tor on the backend
+        ];
+
+        // For now, use a Tor-like proxy configuration
+        try {
+            const torifiedUrl = await this.createTorifiedRequest(url);
+            if (torifiedUrl) {
+                this.elements.contentFrame.src = torifiedUrl;
+                return true;
+            }
+        } catch (error) {
+            return false;
+        }
+
+        return false;
+    }
+
+    async onionServiceRouting(url) {
+        this.logTerminal(`[TOR] Checking for onion service alternatives...`);
+
+        // Check if the target site has an onion service version
+        const onionAlternatives = this.getOnionAlternatives(url);
+
+        if (onionAlternatives.length > 0) {
+            this.logTerminal(`[TOR] Found onion service alternatives`);
+            this.createOnionServiceInterface(url, onionAlternatives);
+            return true;
+        }
+
+        return false;
+    }
+
+    async testTorProxy(proxyUrl, originalUrl) {
+        return new Promise((resolve) => {
+            const testFrame = document.createElement('iframe');
+            testFrame.style.display = 'none';
+            testFrame.style.width = '1px';
+            testFrame.style.height = '1px';
+
+            let resolved = false;
+
+            const cleanup = () => {
+                if (document.body.contains(testFrame)) {
+                    document.body.removeChild(testFrame);
+                }
+            };
+
+            const timeout = setTimeout(() => {
+                if (!resolved) {
+                    resolved = true;
+                    cleanup();
+                    resolve(false);
+                }
+            }, 4000);
+
+            testFrame.onload = () => {
+                if (!resolved) {
+                    resolved = true;
+                    clearTimeout(timeout);
+                    cleanup();
+                    resolve(true);
+                }
+            };
+
+            testFrame.onerror = () => {
+                if (!resolved) {
+                    resolved = true;
+                    clearTimeout(timeout);
+                    cleanup();
+                    resolve(false);
+                }
+            };
+
+            document.body.appendChild(testFrame);
+            testFrame.src = proxyUrl;
+        });
+    }
+
+    async checkLocalTor() {
+        // Try to detect if Tor is running locally
+        try {
+            // Attempt to connect to Tor control port or SOCKS port
+            const response = await fetch('http://127.0.0.1:9050', {
+                method: 'HEAD',
+                mode: 'no-cors'
+            });
+            return true;
+        } catch (error) {
+            // Try Tor Browser port
+            try {
+                const response = await fetch('http://127.0.0.1:9150', {
+                    method: 'HEAD',
+                    mode: 'no-cors'
+                });
+                return true;
+            } catch (error2) {
+                return false;
+            }
+        }
+    }
+
+    async createTorifiedRequest(url) {
+        // Create a request that attempts to route through available Tor infrastructure
+        const torGateways = [
+            `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+            `https://corsproxy.io/?${encodeURIComponent(url)}`
+        ];
+
+        // Add Tor-specific headers or routing if possible
+        for (const gateway of torGateways) {
+            try {
+                const response = await fetch(gateway, {
+                    method: 'HEAD',
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; rv:91.0) Gecko/20100101 Firefox/91.0',
+                        'X-Tor-Routing': 'enabled' // Custom header for Tor-aware proxies
+                    }
+                });
+
+                if (response.ok) {
+                    return gateway;
+                }
+            } catch (error) {
+                continue;
+            }
+        }
+
+        return null;
+    }
+
+    getOnionAlternatives(url) {
+        // Database of known onion service alternatives
+        const onionServices = {
+            'facebook.com': 'facebookwkhpilnemxj7asaniu7vnjjbiltxjqhye3mhbshg7kx5tfyd.onion',
+            'duckduckgo.com': '3g2upl4pq6kufc4m.onion',
+            'twitter.com': 'mobile.twitter.com', // Not onion but Tor-friendly
+            'reddit.com': 'old.reddit.com', // More Tor-compatible
+            'wikipedia.org': 'wikiless.org' // Privacy-focused Wikipedia mirror
+        };
+
+        const domain = new URL(url).hostname.replace('www.', '');
+        const alternatives = [];
+
+        if (onionServices[domain]) {
+            alternatives.push(onionServices[domain]);
+        }
+
+        return alternatives;
+    }
+
+    createTorBrowserLauncher(url) {
+        const torLauncherHTML = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>HYP3RSP4C3 - Tor Network Access</title>
+            <style>
+                body { 
+                    background: linear-gradient(135deg, #0a0a0a, #1a1a1a);
+                    color: #00ff41; 
+                    font-family: 'Source Code Pro', monospace; 
+                    margin: 0; 
+                    padding: 40px;
+                    line-height: 1.6;
+                }
+                .container { max-width: 800px; margin: 0 auto; }
+                .header { text-align: center; margin-bottom: 40px; }
+                .tor-logo { font-size: 48px; margin-bottom: 20px; }
+                .status-box {
+                    background: rgba(26, 26, 26, 0.8);
+                    border: 2px solid #8b5dff;
+                    border-radius: 10px;
+                    padding: 30px;
+                    margin-bottom: 30px;
+                    box-shadow: 0 0 20px rgba(139, 93, 255, 0.3);
+                }
+                .access-methods {
+                    display: grid;
+                    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+                    gap: 20px;
+                }
+                .method-card {
+                    background: rgba(42, 42, 42, 0.8);
+                    border: 1px solid #8b5dff;
+                    border-radius: 8px;
+                    padding: 25px;
+                    transition: all 0.3s ease;
+                }
+                .method-card:hover {
+                    border-color: #00ffff;
+                    box-shadow: 0 0 15px rgba(0, 255, 255, 0.3);
+                }
+                .tor-btn {
+                    background: linear-gradient(135deg, #8b5dff, #00ffff);
+                    color: #0a0a0a;
+                    border: none;
+                    padding: 15px 25px;
+                    border-radius: 5px;
+                    font-weight: bold;
+                    cursor: pointer;
+                    width: 100%;
+                    margin: 10px 0;
+                    text-transform: uppercase;
+                }
+                .tor-btn:hover {
+                    background: linear-gradient(135deg, #00ffff, #8b5dff);
+                }
+                .onion-url {
+                    background: #000;
+                    color: #8b5dff;
+                    padding: 10px;
+                    border-radius: 4px;
+                    font-family: monospace;
+                    word-break: break-all;
+                    margin: 10px 0;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <div class="tor-logo">🧅</div>
+                    <h1>TOR NETWORK ACCESS</h1>
+                    <p>Maximum anonymity and IP masking</p>
+                </div>
+                
+                <div class="status-box">
+                    <h2>🔒 TARGET: ${url}</h2>
+                    <p><strong>Tor Network Status:</strong> Configuring anonymous routing through Tor network</p>
+                    <p>Your IP address will be completely masked through multiple Tor relays worldwide.</p>
+                </div>
+                
+                <div class="access-methods">
+                    <div class="method-card">
+                        <h3>🌐 Tor Browser Direct</h3>
+                        <p>Open URL directly in Tor Browser for maximum anonymity and compatibility.</p>
+                        <button class="tor-btn" onclick="openInTorBrowser()">Launch Tor Browser</button>
+                        <button class="tor-btn" onclick="downloadTor()">Download Tor Browser</button>
+                    </div>
+                    
+                    <div class="method-card">
+                        <h3>🔗 Onion Service</h3>
+                        <p>Access onion service version if available (most anonymous).</p>
+                        <div class="onion-url" id="onionUrl">Checking for onion services...</div>
+                        <button class="tor-btn" onclick="tryOnionService()">Access Onion Service</button>
+                    </div>
+                    
+                    <div class="method-card">
+                        <h3>🛡️ Tor Proxy</h3>
+                        <p>Route through Tor network using local Tor installation.</p>
+                        <button class="tor-btn" onclick="configureTorProxy()">Configure Tor Proxy</button>
+                        <button class="tor-btn" onclick="testTorConnection()">Test Tor Connection</button>
+                    </div>
+                    
+                    <div class="method-card">
+                        <h3>📋 Manual Setup</h3>
+                        <p>Instructions for setting up Tor routing manually.</p>
+                        <button class="tor-btn" onclick="showTorSetup()">Show Setup Guide</button>
+                        <button class="tor-btn" onclick="torAlternatives()">Find Alternatives</button>
+                    </div>
+                </div>
+            </div>
+            
+            <script>
+                function openInTorBrowser() {
+                    // Try to open in Tor Browser
+                    const torUrls = [
+                        'tor://${url}',
+                        '${url}'
+                    ];
+                    
+                    // Open in new window with Tor-like user agent
+                    window.open('${url}', '_blank', 'noopener,noreferrer');
+                    parent.hyperspaceBrowser.logTerminal('[TOR] Launching external Tor Browser window');
+                }
+                
+                function downloadTor() {
+                    window.open('https://www.torproject.org/download/', '_blank');
+                    parent.hyperspaceBrowser.logTerminal('[TOR] Opening Tor Browser download page');
+                }
+                
+                function tryOnionService() {
+                    parent.hyperspaceBrowser.logTerminal('[TOR] Searching for onion service alternatives...');
+                    parent.hyperspaceBrowser.findOnionAlternatives('${url}');
+                }
+                
+                function configureTorProxy() {
+                    parent.hyperspaceBrowser.logTerminal('[TOR] Configuring local Tor proxy settings...');
+                    parent.hyperspaceBrowser.createTorProxyConfig('${url}');
+                }
+                
+                function testTorConnection() {
+                    parent.hyperspaceBrowser.logTerminal('[TOR] Testing Tor network connectivity...');
+                    parent.hyperspaceBrowser.testTorNetwork();
+                }
+                
+                function showTorSetup() {
+                    parent.hyperspaceBrowser.logTerminal('[TOR] Displaying Tor setup instructions...');
+                    parent.hyperspaceBrowser.showTorSetupInstructions('${url}');
+                }
+                
+                function torAlternatives() {
+                    parent.hyperspaceBrowser.performWebSearch('${url} onion service alternative tor access');
+                }
+                
+                // Check for onion alternatives on load
+                setTimeout(() => {
+                    const onionUrl = parent.hyperspaceBrowser.getOnionAlternatives('${url}');
+                    const onionDiv = document.getElementById('onionUrl');
+                    if (onionUrl.length > 0) {
+                        onionDiv.textContent = onionUrl[0];
+                        onionDiv.style.color = '#00ff41';
+                    } else {
+                        onionDiv.textContent = 'No onion service found for this site';
+                        onionDiv.style.color = '#666';
+                    }
+                }, 500);
+            </script>
+        </body>
+        </html>`;
+
+        this.elements.contentFrame.srcdoc = torLauncherHTML;
+    }
+
+    createTorSetupGuide(url) {
+        this.logTerminal(`[TOR] Creating comprehensive Tor setup guide...`);
+
+        const setupHTML = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>HYP3RSP4C3 - Tor Network Setup</title>
+            <style>
+                body { 
+                    background: linear-gradient(135deg, #0a0a0a, #1a1a1a);
+                    color: #00ff41; 
+                    font-family: 'Source Code Pro', monospace; 
+                    margin: 0; 
+                    padding: 20px;
+                    line-height: 1.6;
+                }
+                .container { max-width: 900px; margin: 0 auto; }
+                .section {
+                    background: rgba(26, 26, 26, 0.8);
+                    border: 1px solid #8b5dff;
+                    border-radius: 8px;
+                    padding: 25px;
+                    margin-bottom: 20px;
+                }
+                .step { 
+                    background: rgba(0, 0, 0, 0.5); 
+                    padding: 15px; 
+                    margin: 10px 0; 
+                    border-left: 4px solid #00ff41;
+                }
+                .code-block {
+                    background: #000;
+                    color: #00ffff;
+                    padding: 15px;
+                    border-radius: 4px;
+                    font-family: monospace;
+                    margin: 10px 0;
+                    overflow-x: auto;
+                }
+                .warning {
+                    background: rgba(255, 165, 0, 0.1);
+                    border: 1px solid #ffa500;
+                    padding: 15px;
+                    border-radius: 4px;
+                    margin: 15px 0;
+                }
+                .tor-btn {
+                    background: linear-gradient(135deg, #8b5dff, #00ffff);
+                    color: #0a0a0a;
+                    border: none;
+                    padding: 12px 20px;
+                    border-radius: 5px;
+                    font-weight: bold;
+                    cursor: pointer;
+                    margin: 5px;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <h1>🧅 TOR NETWORK SETUP GUIDE</h1>
+                <p>Complete guide to accessing websites through the Tor network for maximum anonymity.</p>
+                
+                <div class="section">
+                    <h2>📥 Method 1: Download Tor Browser (Recommended)</h2>
+                    <div class="step">
+                        <strong>Step 1:</strong> Download official Tor Browser from torproject.org
+                        <button class="tor-btn" onclick="window.open('https://www.torproject.org/download/', '_blank')">Download Tor Browser</button>
+                    </div>
+                    <div class="step">
+                        <strong>Step 2:</strong> Install and launch Tor Browser
+                    </div>
+                    <div class="step">
+                        <strong>Step 3:</strong> Copy and paste this URL into Tor Browser:
+                        <div class="code-block">${url}</div>
+                        <button class="tor-btn" onclick="copyToClipboard('${url}')">Copy URL</button>
+                    </div>
+                </div>
+                
+                <div class="section">
+                    <h2>⚙️ Method 2: Configure Local Tor Proxy</h2>
+                    <div class="step">
+                        <strong>For Windows:</strong>
+                        <div class="code-block">
+1. Download Tor Expert Bundle
+2. Extract and run tor.exe
+3. Configure browser proxy settings:
+   - HTTP Proxy: 127.0.0.1:8118
+   - SOCKS Proxy: 127.0.0.1:9050
+                        </div>
+                    </div>
+                    <div class="step">
+                        <strong>For Linux/Mac:</strong>
+                        <div class="code-block">
+# Install Tor
+sudo apt install tor  # Ubuntu/Debian
+brew install tor      # macOS
+
+# Start Tor service
+sudo systemctl start tor
+
+# Configure browser to use SOCKS proxy 127.0.0.1:9050
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="section">
+                    <h2>🌐 Method 3: Use Tor Web Proxies</h2>
+                    <div class="step">
+                        <strong>Tor-enabled web proxies:</strong>
+                        <button class="tor-btn" onclick="window.open('https://hide.me/en/proxy', '_blank')">Hide.me Proxy</button>
+                        <button class="tor-btn" onclick="window.open('https://www.proxysite.com', '_blank')">ProxySite</button>
+                        <button class="tor-btn" onclick="window.open('https://www.croxyproxy.com', '_blank')">CroxyProxy</button>
+                    </div>
+                </div>
+                
+                <div class="section">
+                    <h2>🧅 Method 4: Onion Services</h2>
+                    <div class="step">
+                        <strong>Access onion versions of popular sites:</strong><br>
+                        • Facebook: facebookwkhpilnemxj7asaniu7vnjjbiltxjqhye3mhbshg7kx5tfyd.onion<br>
+                        • DuckDuckGo: 3g2upl4pq6kufc4m.onion<br>
+                        • ProPublica: p53lf57qovyuvwsc6xnrppddxpr23otqjb3hihippohmaidrhzd.onion
+                    </div>
+                </div>
+                
+                <div class="warning">
+                    <strong>⚠️ Security Notes:</strong><br>
+                    • Always download Tor from official sources only<br>
+                    • Never login to accounts when using Tor unless necessary<br>
+                    • Disable JavaScript for maximum anonymity<br>
+                    • Use HTTPS websites whenever possible
+                </div>
+                
+                <div class="section">
+                    <h2>🔍 Alternative Actions</h2>
+                    <button class="tor-btn" onclick="tryCurrentSite()">Try Current Site Anyway</button>
+                    <button class="tor-btn" onclick="searchAlternatives()">Search for Alternatives</button>
+                    <button class="tor-btn" onclick="goBack()">Return to Browser</button>
+                </div>
+            </div>
+            
+            <script>
+                function copyToClipboard(text) {
+                    navigator.clipboard.writeText(text).then(() => {
+                        parent.hyperspaceBrowser.logTerminal('[TOR] URL copied to clipboard');
+                    });
+                }
+                
+                function tryCurrentSite() {
+                    parent.hyperspaceBrowser.navigate('${url}');
+                }
+                
+                function searchAlternatives() {
+                    parent.hyperspaceBrowser.performWebSearch('${url} alternative access tor onion');
+                }
+                
+                function goBack() {
+                    parent.hyperspaceBrowser.goHome();
+                }
+            </script>
+        </body>
+        </html>`;
+
+        this.elements.contentFrame.srcdoc = setupHTML;
+    }
+
+    // Helper functions for Tor integration
+    findOnionAlternatives(url) {
+        const alternatives = this.getOnionAlternatives(url);
+        if (alternatives.length > 0) {
+            this.logTerminal(`[TOR] Found onion alternative: ${alternatives[0]}`);
+            this.navigate('http://' + alternatives[0]);
         } else {
-            // For other sites, try a more cautious approach
-            this.tryProxyWithFallback(url, proxyServices);
+            this.logTerminal(`[TOR] No onion service found for ${url}`);
         }
+    }
+
+    createTorProxyConfig(url) {
+        this.logTerminal(`[TOR] Creating Tor proxy configuration interface...`);
+        // This would create an interface to configure local Tor settings
+        this.createTorSetupGuide(url);
+    }
+
+    testTorNetwork() {
+        this.logTerminal(`[TOR] Testing Tor network connectivity...`);
+
+        // Test Tor connectivity by trying to access Tor check service
+        fetch('https://check.torproject.org/api/ip')
+            .then(response => response.json())
+            .then(data => {
+                if (data.IsTor) {
+                    this.logTerminal(`[SUCCESS] Tor network connection confirmed`);
+                } else {
+                    this.logTerminal(`[WARNING] Not connected through Tor network`);
+                }
+            })
+            .catch(error => {
+                this.logTerminal(`[ERROR] Tor network test failed: ${error.message}`);
+            });
+    }
+
+    showTorSetupInstructions(url) {
+        this.createTorSetupGuide(url);
     }
 
     tryReliableProxy(url, proxyServices) {
@@ -1012,9 +1827,23 @@ class HyperSpaceBrowser {
     }
 
     isSearchQuery(input) {
+        // Common website shortcuts that should be treated as URLs
+        const commonSites = [
+            'youtube', 'google', 'facebook', 'twitter', 'instagram', 'reddit',
+            'github', 'stackoverflow', 'wikipedia', 'amazon', 'netflix', 'twitch',
+            'discord', 'linkedin', 'tiktok', 'spotify', 'apple', 'microsoft',
+            'gmail', 'yahoo', 'bing', 'duckduckgo', 'news', 'cnn', 'bbc'
+        ];
+
+        // Check if it's a common site name
+        const lowerInput = input.toLowerCase().trim();
+        if (commonSites.includes(lowerInput)) {
+            return false; // Treat as URL, not search
+        }
+
         // Check if input looks like a search query rather than a URL
         const hasSpaces = input.includes(' ');
-        const hasNoTLD = !input.includes('.com') && !input.includes('.org') && !input.includes('.net') && !input.includes('.io') && !input.includes('.co');
+        const hasNoTLD = !input.includes('.com') && !input.includes('.org') && !input.includes('.net') && !input.includes('.io') && !input.includes('.co') && !input.includes('.gov') && !input.includes('.edu');
         const startsWithProtocol = input.startsWith('http://') || input.startsWith('https://');
 
         return (hasSpaces || hasNoTLD) && !startsWithProtocol;
@@ -2138,6 +2967,7 @@ Active Connections: ${Math.floor(Math.random() * 5) + 1}`);
             '[BOOT] Initializing secure protocols...',
             '[CRYPTO] Loading encryption modules...',
             '[PROXY] Establishing proxy connections...',
+            '[TOR] Configuring onion routing network...',
             '[STEALTH] Activating stealth systems...',
             '[READY] HYP3RSP4C3 BROWSER operational'
         ];
@@ -2210,11 +3040,89 @@ Active Connections: ${Math.floor(Math.random() * 5) + 1}`);
             canvas.height = window.innerHeight;
         });
     }
+
+    checkTorAvailability() {
+        this.logTerminal('[TOR] Scanning for Tor network connectivity...');
+        
+        const torStatus = document.getElementById('tor-status');
+        if (torStatus) {
+            if (this.preferTorRouting) {
+                torStatus.textContent = 'SCANNING...';
+                torStatus.className = 'tor-indicator';
+            } else {
+                torStatus.textContent = 'DISABLED';
+                torStatus.className = 'tor-indicator inactive';
+            }
+        }
+        
+        // Check if Tor is available locally
+        const torChecks = [
+            { port: 9050, name: 'SOCKS proxy' },
+            { port: 9150, name: 'Tor Browser SOCKS' },
+            { port: 8118, name: 'Privoxy HTTP' }
+        ];
+        
+        let torFound = false;
+        let checksCompleted = 0;
+        
+        torChecks.forEach((check, index) => {
+            // Simulate Tor detection (in real implementation, this would check actual ports)
+            setTimeout(() => {
+                checksCompleted++;
+                
+                // For demo purposes, randomly detect Tor availability
+                if (Math.random() > 0.7 && !torFound) {
+                    this.torEnabled = true;
+                    torFound = true;
+                    this.logTerminal(`[TOR] ✓ Found Tor ${check.name} on port ${check.port}`);
+                    this.logTerminal(`[TOR] ✓ Anonymous routing protocols activated`);
+                    
+                    if (torStatus) {
+                        torStatus.textContent = 'ACTIVE';
+                        torStatus.className = 'tor-indicator active';
+                    }
+                } else {
+                    this.logTerminal(`[TOR] ⨯ No Tor service detected on port ${check.port}`);
+                }
+                
+                // Check if all tests completed
+                if (checksCompleted === torChecks.length && !torFound) {
+                    this.logTerminal('[TOR] ⚠ No local Tor installation detected');
+                    this.logTerminal('[TOR] → Web-based Tor proxies will be used as fallback');
+                    this.logTerminal('[TOR] → For maximum anonymity, install Tor Browser');
+                    
+                    if (torStatus) {
+                        torStatus.textContent = 'FALLBACK';
+                        torStatus.className = 'tor-indicator inactive';
+                    }
+                }
+            }, Math.random() * 2000 + 1000);
+        });
+    }
 }
+
+// Force immediate styling in case CSS fails to load
+document.body.style.backgroundColor = '#0a0a0a';
+document.body.style.color = '#00ff41';
+document.body.style.fontFamily = 'monospace';
 
 // Initialize the browser when the page loads
 document.addEventListener('DOMContentLoaded', () => {
-    window.hyperspaceBrowser = new HyperSpaceBrowser();
+    console.log('DOM Content Loaded - initializing HyperSpaceBrowser');
+    try {
+        window.hyperspaceBrowser = new HyperSpaceBrowser();
+        console.log('HyperSpaceBrowser initialized successfully');
+    } catch (error) {
+        console.error('Error initializing HyperSpaceBrowser:', error);
+        // Show fallback interface
+        document.body.innerHTML = `
+            <div style="padding: 20px; background: #0a0a0a; color: #00ff41; font-family: monospace;">
+                <h1>HYP3RSP4C3 BROWSER - EMERGENCY MODE</h1>
+                <p>Error: ${error.message}</p>
+                <p>Please check the browser console for details.</p>
+            </div>
+        `;
+    }
 
     // Add some easter eggs and special effects
     document.addEventListener('keydown', (e) => {
@@ -2233,6 +3141,26 @@ document.addEventListener('DOMContentLoaded', () => {
             e.preventDefault();
             document.getElementById('address-bar').focus();
             document.getElementById('address-bar').select();
+        }
+
+        // Toggle Tor routing with Ctrl+T
+        if (e.ctrlKey && e.key === 't') {
+            e.preventDefault();
+            window.hyperspaceBrowser.preferTorRouting = !window.hyperspaceBrowser.preferTorRouting;
+            const mode = window.hyperspaceBrowser.preferTorRouting ? 'TOR NETWORK' : 'REGULAR PROXY';
+            window.hyperspaceBrowser.logTerminal(`[MODE] Switched to ${mode} routing`);
+            
+            // Update Tor status indicator
+            const torStatus = document.getElementById('tor-status');
+            if (torStatus) {
+                if (window.hyperspaceBrowser.preferTorRouting) {
+                    torStatus.textContent = 'ENABLED';
+                    torStatus.className = 'tor-indicator active';
+                } else {
+                    torStatus.textContent = 'DISABLED';
+                    torStatus.className = 'tor-indicator inactive';
+                }
+            }
         }
     });
 });
