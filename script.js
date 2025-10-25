@@ -118,16 +118,13 @@ class HyperSpaceBrowser {
         this.elements.welcomeScreen.style.display = 'none';
         this.elements.contentFrame.style.display = 'block';
 
-        // Simulate proxy routing delay
-        setTimeout(() => {
-            try {
-                // Use proxy service to bypass CORS and X-Frame-Options restrictions
-                this.loadThroughProxy(url);
-            } catch (error) {
-                this.logTerminal(`[ERROR] Infiltration failed: ${error.message}`);
-                this.hideLoading();
-            }
-        }, Math.random() * 2000 + 1000);
+        // Immediate proxy connection (no artificial delay)
+        try {
+            this.loadThroughProxy(url);
+        } catch (error) {
+            this.logTerminal(`[ERROR] Infiltration failed: ${error.message}`);
+            this.hideLoading();
+        }
     }
 
     sanitizeUrl(url) {
@@ -289,24 +286,143 @@ class HyperSpaceBrowser {
     }
 
     tryProxyService(url, proxyServices, index) {
-        if (index >= proxyServices.length) {
-            this.logTerminal(`[ERROR] All proxy routes failed for: ${url}`);
-            this.createFallbackInterface(url);
-            return;
-        }
+        // Fast parallel approach - try all proxies simultaneously
+        this.logTerminal(`[PROXY] Initiating fast parallel connection attempts...`);
+        this.tryAllProxiesParallel(url, proxyServices);
+    }
 
-        const proxyUrl = proxyServices[index];
-        const serviceName = this.getProxyServiceName(proxyUrl);
+    tryAllProxiesParallel(url, proxyServices) {
+        let hasSucceeded = false;
+        const startTime = Date.now();
 
-        this.logTerminal(`[PROXY] Attempting route ${index + 1}: ${serviceName}`);
+        // Track attempts for logging
+        let completedAttempts = 0;
+        const totalAttempts = proxyServices.length;
 
-        // For AllOrigins API, we need to fetch the content and display it
-        if (proxyUrl.includes('allorigins.win')) {
-            this.loadThroughAllOrigins(url, proxyServices, index);
-        } else {
-            // For other proxies, try direct iframe loading
-            this.loadThroughDirectProxy(proxyUrl, url, proxyServices, index);
-        }
+        // Create promises for all proxy attempts
+        const proxyPromises = proxyServices.map((proxyUrl, index) => {
+            const serviceName = this.getProxyServiceName(proxyUrl);
+
+            return new Promise((resolve, reject) => {
+                if (hasSucceeded) {
+                    reject('Another proxy already succeeded');
+                    return;
+                }
+
+                this.logTerminal(`[PROXY] Route ${index + 1}: ${serviceName} - Starting...`);
+
+                if (proxyUrl.includes('allorigins.win')) {
+                    // Fast AllOrigins attempt with 2 second timeout
+                    this.fastAllOriginsLoad(url, resolve, reject, serviceName);
+                } else {
+                    // Fast iframe attempt with 1.5 second timeout
+                    this.fastIframeLoad(proxyUrl, url, resolve, reject, serviceName);
+                }
+            });
+        });
+
+        // Race all proxy attempts - first one to succeed wins
+        Promise.race(proxyPromises.map(p => p.catch(e => ({ error: e }))))
+            .then(result => {
+                if (result && !result.error && !hasSucceeded) {
+                    hasSucceeded = true;
+                    const loadTime = ((Date.now() - startTime) / 1000).toFixed(2);
+                    this.logTerminal(`[SUCCESS] Proxy connected in ${loadTime}s via ${result.service}`);
+                }
+            })
+            .catch(() => {
+                // All failed, but check if any succeeded in the meantime
+                setTimeout(() => {
+                    if (!hasSucceeded) {
+                        this.logTerminal(`[ERROR] All fast proxy routes failed`);
+                        this.createFallbackInterface(url);
+                    }
+                }, 100);
+            });
+
+        // Set overall timeout of 3 seconds for all attempts
+        setTimeout(() => {
+            if (!hasSucceeded) {
+                hasSucceeded = true;
+                this.logTerminal(`[TIMEOUT] Fast proxy timeout - switching to fallback`);
+                this.createFallbackInterface(url);
+            }
+        }, 3000);
+    }
+
+    fastAllOriginsLoad(url, resolve, reject, serviceName) {
+        const apiUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+
+        // Create abort controller for timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 2000);
+
+        fetch(apiUrl, { signal: controller.signal })
+            .then(response => {
+                clearTimeout(timeoutId);
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                return response.json();
+            })
+            .then(data => {
+                if (data.contents && data.contents.length > 100) {
+                    this.displayProxiedContent(data.contents, url);
+                    resolve({ service: serviceName });
+                } else {
+                    throw new Error('No content received');
+                }
+            })
+            .catch(error => {
+                clearTimeout(timeoutId);
+                reject(`${serviceName}: ${error.message}`);
+            });
+    }
+
+    fastIframeLoad(proxyUrl, originalUrl, resolve, reject, serviceName) {
+        const testFrame = document.createElement('iframe');
+        testFrame.style.display = 'none';
+        testFrame.style.width = '100%';
+        testFrame.style.height = '100%';
+        testFrame.style.border = 'none';
+
+        let hasResolved = false;
+
+        const cleanup = () => {
+            if (document.body.contains(testFrame)) {
+                document.body.removeChild(testFrame);
+            }
+        };
+
+        const timeout = setTimeout(() => {
+            if (!hasResolved) {
+                hasResolved = true;
+                cleanup();
+                reject(`${serviceName}: Timeout`);
+            }
+        }, 1500);
+
+        testFrame.onload = () => {
+            if (!hasResolved) {
+                hasResolved = true;
+                clearTimeout(timeout);
+
+                // Success - replace main frame
+                this.elements.contentFrame.src = proxyUrl;
+                cleanup();
+                resolve({ service: serviceName });
+            }
+        };
+
+        testFrame.onerror = () => {
+            if (!hasResolved) {
+                hasResolved = true;
+                clearTimeout(timeout);
+                cleanup();
+                reject(`${serviceName}: Load error`);
+            }
+        };
+
+        testFrame.src = proxyUrl;
+        document.body.appendChild(testFrame);
     }
 
     loadThroughAllOrigins(url, proxyServices, index) {
@@ -414,72 +530,63 @@ class HyperSpaceBrowser {
     }
 
     loadYouTubeProxy(url) {
-        this.logTerminal(`[YOUTUBE] Attempting YouTube proxy connection...`);
+        this.logTerminal(`[YOUTUBE] Fast YouTube proxy attempt...`);
 
-        // Try multiple YouTube proxy methods
-        const youtubeProxies = [
-            `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
-            `https://invidious.io/${url.replace('https://www.youtube.com', '')}`,
-            `https://corsproxy.io/?${encodeURIComponent(url)}`
-        ];
+        // Try the fastest YouTube proxy first - AllOrigins with short timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 1500);
 
-        this.tryYouTubeProxy(url, youtubeProxies, 0);
-    }
+        const apiUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
 
-    tryYouTubeProxy(originalUrl, proxies, index) {
-        if (index >= proxies.length) {
-            this.logTerminal(`[YOUTUBE] All YouTube proxies failed, creating alternative interface`);
-            this.createYouTubeAlternative(originalUrl);
-            return;
-        }
-
-        const proxyUrl = proxies[index];
-        this.logTerminal(`[YOUTUBE] Trying YouTube proxy ${index + 1}...`);
-
-        if (proxyUrl.includes('allorigins.win')) {
-            fetch(proxyUrl)
-                .then(response => response.json())
-                .then(data => {
-                    if (data.contents) {
-                        this.logTerminal(`[SUCCESS] YouTube content loaded via proxy`);
-                        this.displayProxiedContent(data.contents, originalUrl);
-                    } else {
-                        throw new Error('No content received');
-                    }
-                })
-                .catch(() => {
-                    this.tryYouTubeProxy(originalUrl, proxies, index + 1);
-                });
-        } else {
-            // Try direct iframe loading
-            this.elements.contentFrame.src = proxyUrl;
-
-            setTimeout(() => {
-                // Check if it loaded successfully (basic check)
-                this.logTerminal(`[YOUTUBE] Proxy attempt ${index + 1} completed`);
-            }, 3000);
-        }
-    }
-
-    loadGoogleProxy(url) {
-        this.logTerminal(`[GOOGLE] Loading Google through proxy...`);
-
-        // For Google, try the AllOrigins approach
-        const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
-
-        fetch(proxyUrl)
-            .then(response => response.json())
+        fetch(apiUrl, { signal: controller.signal })
+            .then(response => {
+                clearTimeout(timeoutId);
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                return response.json();
+            })
             .then(data => {
-                if (data.contents) {
-                    this.logTerminal(`[SUCCESS] Google loaded via AllOrigins proxy`);
+                if (data.contents && data.contents.length > 500) {
+                    this.logTerminal(`[SUCCESS] YouTube loaded via fast proxy`);
                     this.displayProxiedContent(data.contents, url);
                 } else {
-                    // Fallback to search interface
-                    this.createSearchResultsPage(this.extractSearchQuery(url) || '');
+                    throw new Error('Insufficient content');
                 }
             })
             .catch(error => {
-                this.logTerminal(`[GOOGLE] Proxy failed, using search interface`);
+                clearTimeout(timeoutId);
+                this.logTerminal(`[YOUTUBE] Fast proxy failed: ${error.message}`);
+                // Immediately show YouTube alternative instead of trying more proxies
+                this.createYouTubeAlternative(url);
+            });
+    }
+
+    loadGoogleProxy(url) {
+        this.logTerminal(`[GOOGLE] Fast Google proxy attempt...`);
+
+        // Fast Google proxy with 1 second timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 1000);
+
+        const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+
+        fetch(proxyUrl, { signal: controller.signal })
+            .then(response => {
+                clearTimeout(timeoutId);
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                return response.json();
+            })
+            .then(data => {
+                if (data.contents && data.contents.length > 300) {
+                    this.logTerminal(`[SUCCESS] Google loaded via fast proxy`);
+                    this.displayProxiedContent(data.contents, url);
+                } else {
+                    throw new Error('Insufficient content');
+                }
+            })
+            .catch(error => {
+                clearTimeout(timeoutId);
+                this.logTerminal(`[GOOGLE] Fast proxy failed, using search interface`);
+                // Immediately show search interface instead of retrying
                 this.createSearchResultsPage(this.extractSearchQuery(url) || '');
             });
     }
@@ -1776,7 +1883,7 @@ class HyperSpaceBrowser {
         let messageIndex = 0;
 
         const loadingInterval = setInterval(() => {
-            progress += Math.random() * 15 + 5;
+            progress += Math.random() * 25 + 15; // Faster progress increments
             if (progress > 100) progress = 100;
 
             this.elements.progressBar.style.width = progress + '%';
@@ -1790,10 +1897,15 @@ class HyperSpaceBrowser {
                 clearInterval(loadingInterval);
                 // The loading will be hidden when the frame loads
             }
-        }, 300);
+        }, 150); // Much faster animation (was 300ms, now 150ms)
 
         // Store interval to clear it if needed
         this.loadingInterval = loadingInterval;
+        
+        // Auto-hide loading after 4 seconds max (was unlimited)
+        setTimeout(() => {
+            this.hideLoading();
+        }, 4000);
     }
 
     hideLoading() {
