@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HYP3RSP4C3 BROWSER - CLASSIFIED</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Source+Code+Pro:wght@300;400;600&display=swap" rel="stylesheet">
+</head>
+
+<body>
+    <!-- Matrix Background -->
+    <canvas id="matrix-bg"></canvas>
+
+    <!-- Main Container -->
+    <div class="browser-container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-left">
+                <div class="logo">
+                    <span class="logo-text">HYP3RSP4C3</span>
+                    <span class="logo-subtitle">[BROWSER]</span>
+                </div>
+                <div class="status-indicator">
+                    <span class="status-dot"></span>
+                    <span class="status-text">SECURE CONNECTION</span>
+                </div>
+            </div>
+            <div class="header-right">
+                <div class="system-info">
+                    <span id="current-time"></span>
+                    <span class="separator">|</span>
+                    <span>STEALTH MODE: <span id="stealth-status">ACTIVE</span></span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Navigation Bar -->
+        <nav class="nav-bar">
+            <div class="nav-controls">
+                <button class="nav-btn" id="back-btn" title="Back">◄</button>
+                <button class="nav-btn" id="forward-btn" title="Forward">►</button>
+                <button class="nav-btn" id="refresh-btn" title="Refresh">⟲</button>
+                <button class="nav-btn" id="home-btn" title="Home">⌂</button>
+            </div>
+
+            <div class="address-container">
+                <div class="security-indicator">🔒</div>
+                <input type="text" class="address-bar" id="address-bar" placeholder="Enter target URL... [ENCRYPTED CHANNEL]">
+                <button class="go-btn" id="go-btn">INFILTRATE</button>
+            </div>
+
+            <div class="tools">
+                <button class="tool-btn" id="stealth-toggle" title="Toggle Stealth Mode">👁</button>
+                <button class="tool-btn" id="proxy-settings" title="Proxy Settings">⚙</button>
+                <button class="tool-btn" id="mission-control" title="Mission Control">📡</button>
+            </div>
+        </nav>
+
+        <!-- Status Bar -->
+        <div class="status-bar">
+            <div class="status-left">
+                <span class="status-item">PROXY: <span id="proxy-status">ACTIVE</span></span>
+                <span class="status-item">ENCRYPTION: <span class="secure">AES-256</span></span>
+                <span class="status-item">LOCATION: <span id="location-spoof">MASKED</span></span>
+            </div>
+            <div class="status-right">
+                <span class="status-item">THREAT LEVEL: <span class="threat-low">LOW</span></span>
+                <span class="loading-indicator" id="loading-indicator">●●●</span>
+            </div>
+        </div>
+
+        <!-- Terminal Output -->
+        <div class="terminal-output" id="terminal-output">
+            <div class="terminal-line">[SYSTEM] HYP3RSP4C3 BROWSER v2.1.337 initialized...</div>
+            <div class="terminal-line">[PROXY] Secure connection established</div>
+            <div class="terminal-line">[CRYPTO] Encryption protocols activated</div>
+            <div class="terminal-line">[READY] Awaiting target coordinates...</div>
+        </div>
+
+        <!-- Content Area -->
+        <main class="content-area">
+            <div class="welcome-screen" id="welcome-screen">
+                <div class="welcome-content">
+                    <h1 class="welcome-title">HYP3RSP4C3 BROWSER</h1>
+                    <p class="welcome-subtitle">CLASSIFIED BROWSING SYSTEM</p>
+                    <div class="access-granted">
+                        <span class="access-text">ACCESS GRANTED</span>
+                        <div class="access-details">
+                            <p>Agent clearance: LEVEL 5</p>
+                            <p>Proxy status: OPERATIONAL</p>
+                            <p>Stealth protocols: ACTIVE</p>
+                        </div>
+                    </div>
+                    <div class="quick-access">
+                        <h3>QUICK ACCESS TARGETS</h3>
+                        <div class="target-grid">
+                            <div class="target-item" data-url="https://google.com">SEARCH ENGINE ALPHA</div>
+                            <div class="target-item" data-url="https://github.com">CODE REPOSITORY</div>
+                            <div class="target-item" data-url="https://stackoverflow.com">INTEL DATABASE</div>
+                            <div class="target-item" data-url="https://news.ycombinator.com">TECH INTEL</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <iframe class="content-frame" id="content-frame" src="" style="display: none;"></iframe>
+        </main>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <div class="footer-left">
+                <span>© 2024 HYP3RSP4C3 SYSTEMS - CLASSIFIED</span>
+            </div>
+            <div class="footer-right">
+                <span>SECURE BROWSING PROTOCOL v2.1.337</span>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loading-overlay">
+        <div class="loading-content">
+            <div class="loading-spinner"></div>
+            <div class="loading-text">
+                <span class="loading-main">INFILTRATING TARGET</span>
+                <span class="loading-sub" id="loading-sub">Establishing secure connection...</span>
+            </div>
+            <div class="loading-progress">
+                <div class="progress-bar" id="progress-bar"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+
+</html>
