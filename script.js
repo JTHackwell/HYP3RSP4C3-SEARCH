@@ -121,9 +121,8 @@ class HyperSpaceBrowser {
         // Simulate proxy routing delay
         setTimeout(() => {
             try {
-                // In a real proxy browser, this would route through a proxy server
-                // For demo purposes, we'll load directly but with security headers
-                this.elements.contentFrame.src = url;
+                // Use proxy service to bypass CORS and X-Frame-Options restrictions
+                this.loadThroughProxy(url);
             } catch (error) {
                 this.logTerminal(`[ERROR] Infiltration failed: ${error.message}`);
                 this.hideLoading();
@@ -177,7 +176,8 @@ class HyperSpaceBrowser {
         if (this.historyIndex > 0) {
             this.historyIndex--;
             this.currentUrl = this.history[this.historyIndex];
-            this.elements.contentFrame.src = this.currentUrl;
+            this.showLoading(this.currentUrl);
+            this.loadThroughProxy(this.currentUrl);
             this.elements.addressBar.value = this.isStealthMode ? this.obfuscateUrl(this.currentUrl) : this.currentUrl;
             this.updateNavigationButtons();
             this.logTerminal(`[NAVIGATE] Returning to previous target`);
@@ -188,7 +188,8 @@ class HyperSpaceBrowser {
         if (this.historyIndex < this.history.length - 1) {
             this.historyIndex++;
             this.currentUrl = this.history[this.historyIndex];
-            this.elements.contentFrame.src = this.currentUrl;
+            this.showLoading(this.currentUrl);
+            this.loadThroughProxy(this.currentUrl);
             this.elements.addressBar.value = this.isStealthMode ? this.obfuscateUrl(this.currentUrl) : this.currentUrl;
             this.updateNavigationButtons();
             this.logTerminal(`[NAVIGATE] Advancing to next target`);
@@ -198,7 +199,8 @@ class HyperSpaceBrowser {
     refresh() {
         if (this.currentUrl) {
             this.showLoading(this.currentUrl);
-            this.elements.contentFrame.src = this.currentUrl + '?t=' + Date.now();
+            // Use the proxy system for refresh as well
+            this.loadThroughProxy(this.currentUrl + '?t=' + Date.now());
             this.logTerminal(`[REFRESH] Reacquiring target data...`);
         }
     }
@@ -233,6 +235,299 @@ class HyperSpaceBrowser {
         if (this.currentUrl) {
             this.elements.addressBar.value = this.isStealthMode ? this.obfuscateUrl(this.currentUrl) : this.currentUrl;
         }
+    }
+
+    loadThroughProxy(url) {
+        // List of proxy services to try (in order of preference)
+        const proxyServices = [
+            // AllOrigins - Good for most sites
+            `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+            // CORS Anywhere (if available)
+            `https://cors-anywhere.herokuapp.com/${url}`,
+            // ThingProxy
+            `https://thingproxy.freeboard.io/fetch/${url}`
+        ];
+
+        // Special handling for common sites
+        if (url.includes('google.com')) {
+            // For Google, create a custom search interface
+            this.createCustomGoogleInterface(url);
+            return;
+        }
+
+        if (url.includes('github.com')) {
+            // GitHub works better with direct embedding
+            this.elements.contentFrame.src = url;
+            this.logTerminal(`[PROXY] GitHub target - using direct connection`);
+            return;
+        }
+
+        // Try proxy services in order
+        this.tryProxyServices(url, proxyServices, 0);
+    }
+
+    createCustomGoogleInterface(url) {
+        // Extract search query if it's a search URL
+        const searchMatch = url.match(/[?&]q=([^&]*)/);
+        const query = searchMatch ? decodeURIComponent(searchMatch[1]) : '';
+
+        // Create a custom Google search interface
+        const customHTML = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>HYP3RSP4C3 Search Engine</title>
+            <style>
+                body { 
+                    background: #0a0a0a; 
+                    color: #00ff41; 
+                    font-family: 'Source Code Pro', monospace; 
+                    margin: 0; 
+                    padding: 40px;
+                }
+                .search-container { 
+                    max-width: 600px; 
+                    margin: 0 auto; 
+                    text-align: center; 
+                }
+                .logo { 
+                    font-size: 48px; 
+                    font-weight: bold; 
+                    margin-bottom: 40px;
+                    text-shadow: 0 0 20px #00ff41;
+                }
+                .search-box { 
+                    width: 100%; 
+                    padding: 15px; 
+                    font-size: 18px; 
+                    background: #1a1a1a; 
+                    border: 2px solid #00ff41; 
+                    color: #00ff41; 
+                    border-radius: 5px;
+                    margin-bottom: 20px;
+                }
+                .search-btn { 
+                    padding: 15px 30px; 
+                    background: linear-gradient(135deg, #00ff41, #00ffff); 
+                    color: #0a0a0a; 
+                    border: none; 
+                    border-radius: 5px; 
+                    font-weight: bold; 
+                    cursor: pointer;
+                    margin: 0 10px;
+                }
+                .results { 
+                    text-align: left; 
+                    margin-top: 40px; 
+                }
+                .result-item { 
+                    background: #1a1a1a; 
+                    border: 1px solid #333; 
+                    padding: 20px; 
+                    margin-bottom: 15px; 
+                    border-radius: 5px;
+                }
+                .result-title { 
+                    color: #00ffff; 
+                    font-size: 20px; 
+                    margin-bottom: 10px; 
+                }
+                .result-url { 
+                    color: #00ff41; 
+                    font-size: 14px; 
+                    margin-bottom: 10px; 
+                }
+                .result-desc { 
+                    color: #ccc; 
+                    line-height: 1.5; 
+                }
+            </style>
+        </head>
+        <body>
+            <div class="search-container">
+                <div class="logo">HYP3RSP4C3 SEARCH</div>
+                <input type="text" class="search-box" placeholder="Enter search query..." value="${query}">
+                <br>
+                <button class="search-btn" onclick="performSearch()">SEARCH</button>
+                <button class="search-btn" onclick="openGoogle()">OPEN GOOGLE</button>
+                
+                <div class="results" id="results">
+                    ${query ? this.generateMockResults(query) : '<p style="text-align:center; color:#666;">Enter a search query above to begin infiltrating the data matrix...</p>'}
+                </div>
+            </div>
+            
+            <script>
+                function performSearch() {
+                    const query = document.querySelector('.search-box').value;
+                    if (query.trim()) {
+                        parent.hyperspaceBrowser.navigate('https://www.google.com/search?q=' + encodeURIComponent(query));
+                    }
+                }
+                
+                function openGoogle() {
+                    window.open('https://www.google.com', '_blank');
+                }
+                
+                document.querySelector('.search-box').addEventListener('keypress', function(e) {
+                    if (e.key === 'Enter') {
+                        performSearch();
+                    }
+                });
+            </script>
+        </body>
+        </html>`;
+
+        this.elements.contentFrame.srcdoc = customHTML;
+        this.logTerminal(`[CUSTOM] Custom search interface deployed`);
+    }
+
+    generateMockResults(query) {
+        const mockResults = [{
+                title: `${query} - Official Site`,
+                url: `https://www.${query.toLowerCase().replace(/\s+/g, '')}.com`,
+                desc: `Official website and resources for ${query}. Find comprehensive information, documentation, and services.`
+            },
+            {
+                title: `${query} - Wikipedia`,
+                url: `https://en.wikipedia.org/wiki/${query.replace(/\s+/g, '_')}`,
+                desc: `Wikipedia article about ${query}. Free encyclopedia entry with detailed information and references.`
+            },
+            {
+                title: `${query} Documentation`,
+                url: `https://docs.${query.toLowerCase().replace(/\s+/g, '')}.com`,
+                desc: `Technical documentation and guides for ${query}. Learn how to use and implement effectively.`
+            }
+        ];
+
+        return mockResults.map(result => `
+            <div class="result-item">
+                <div class="result-title">${result.title}</div>
+                <div class="result-url">${result.url}</div>
+                <div class="result-desc">${result.desc}</div>
+            </div>
+        `).join('');
+    }
+
+    tryProxyServices(url, proxyServices, index) {
+        if (index >= proxyServices.length) {
+            // All proxy services failed, show error page
+            this.showErrorPage(url, 'All proxy services failed');
+            return;
+        }
+
+        const proxyUrl = proxyServices[index];
+        this.logTerminal(`[PROXY] Attempting route ${index + 1}/${proxyServices.length}`);
+
+        // Create a temporary iframe to test the proxy
+        const testFrame = document.createElement('iframe');
+        testFrame.style.display = 'none';
+        testFrame.src = proxyUrl;
+
+        testFrame.onload = () => {
+            // Proxy service worked
+            this.elements.contentFrame.src = proxyUrl;
+            this.logTerminal(`[SUCCESS] Proxy route ${index + 1} established`);
+            document.body.removeChild(testFrame);
+        };
+
+        testFrame.onerror = () => {
+            // This proxy failed, try the next one
+            this.logTerminal(`[PROXY] Route ${index + 1} failed, trying alternative...`);
+            document.body.removeChild(testFrame);
+            this.tryProxyServices(url, proxyServices, index + 1);
+        };
+
+        // Timeout after 5 seconds
+        setTimeout(() => {
+            if (document.body.contains(testFrame)) {
+                this.logTerminal(`[PROXY] Route ${index + 1} timeout, trying alternative...`);
+                document.body.removeChild(testFrame);
+                this.tryProxyServices(url, proxyServices, index + 1);
+            }
+        }, 5000);
+
+        document.body.appendChild(testFrame);
+    }
+
+    showErrorPage(url, error) {
+        const errorHTML = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>HYP3RSP4C3 - ACCESS DENIED</title>
+            <style>
+                body { 
+                    background: #0a0a0a; 
+                    color: #ff0040; 
+                    font-family: 'Source Code Pro', monospace; 
+                    margin: 0; 
+                    padding: 40px;
+                    text-align: center;
+                }
+                .error-container { 
+                    max-width: 600px; 
+                    margin: 0 auto; 
+                    border: 2px solid #ff0040;
+                    padding: 40px;
+                    border-radius: 10px;
+                    box-shadow: 0 0 20px rgba(255, 0, 64, 0.3);
+                }
+                .error-title { 
+                    font-size: 36px; 
+                    font-weight: bold; 
+                    margin-bottom: 20px;
+                    text-shadow: 0 0 20px #ff0040;
+                    animation: blink 1s infinite;
+                }
+                .error-code { 
+                    font-size: 24px; 
+                    color: #00ff41; 
+                    margin-bottom: 20px; 
+                }
+                .error-message { 
+                    font-size: 16px; 
+                    line-height: 1.5; 
+                    margin-bottom: 30px;
+                    color: #ccc;
+                }
+                .retry-btn { 
+                    padding: 15px 30px; 
+                    background: linear-gradient(135deg, #ff0040, #ff4080); 
+                    color: white; 
+                    border: none; 
+                    border-radius: 5px; 
+                    font-weight: bold; 
+                    cursor: pointer;
+                    margin: 0 10px;
+                }
+                @keyframes blink {
+                    0%, 50% { opacity: 1; }
+                    51%, 100% { opacity: 0.3; }
+                }
+            </style>
+        </head>
+        <body>
+            <div class="error-container">
+                <div class="error-title">ACCESS DENIED</div>
+                <div class="error-code">ERROR CODE: X-FRAME-BLOCKED</div>
+                <div class="error-message">
+                    Target site "${url}" has activated countermeasures against infiltration attempts.<br><br>
+                    The target is using X-Frame-Options headers to prevent embedding.<br>
+                    This is a security measure to protect against clickjacking attacks.<br><br>
+                    <strong>Possible Solutions:</strong><br>
+                    • Click "Open Externally" to view in a new window<br>
+                    • Try accessing a different target<br>
+                    • Some sites work better than others
+                </div>
+                <button class="retry-btn" onclick="parent.hyperspaceBrowser.navigate('${url}')">RETRY INFILTRATION</button>
+                <button class="retry-btn" onclick="window.open('${url}', '_blank')">OPEN EXTERNALLY</button>
+                <button class="retry-btn" onclick="parent.hyperspaceBrowser.goHome()">RETURN TO BASE</button>
+            </div>
+        </body>
+        </html>`;
+
+        this.elements.contentFrame.srcdoc = errorHTML;
+        this.logTerminal(`[ERROR] Target blocked: ${error}`);
     }
 
     showLoading(url) {
