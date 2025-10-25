@@ -131,17 +131,31 @@ class HyperSpaceBrowser {
     }
 
     sanitizeUrl(url) {
-        // Add protocol if missing
+        // Remove any extra whitespace
+        url = url.trim();
+
+        // If it's clearly a search query (has spaces or common search terms), return as-is
+        if (this.isSearchQuery(url)) {
+            return url;
+        }
+
+        // Add protocol if missing for URLs
         if (!url.match(/^https?:\/\//)) {
-            url = 'https://' + url;
+            // Check if it looks like a domain
+            if (url.includes('.') && !url.includes(' ')) {
+                url = 'https://' + url;
+            } else {
+                // Treat as search query
+                return url;
+            }
         }
 
         try {
             new URL(url);
             return url;
         } catch {
-            // If URL is invalid, try as search query
-            return `https://www.google.com/search?q=${encodeURIComponent(url)}`;
+            // If URL is invalid, treat as search query
+            return url;
         }
     }
 
@@ -238,32 +252,551 @@ class HyperSpaceBrowser {
     }
 
     loadThroughProxy(url) {
-        // List of proxy services to try (in order of preference)
-        const proxyServices = [
-            // AllOrigins - Good for most sites
-            `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-            // CORS Anywhere (if available)
-            `https://cors-anywhere.herokuapp.com/${url}`,
-            // ThingProxy
-            `https://thingproxy.freeboard.io/fetch/${url}`
+        // Check if it's a search query or direct URL
+        if (this.isSearchQuery(url)) {
+            this.performWebSearch(url);
+            return;
+        }
+
+        // For direct URLs, create a content page with multiple options
+        this.createContentPage(url);
+    }
+
+    isSearchQuery(input) {
+        // Check if input looks like a search query rather than a URL
+        const hasSpaces = input.includes(' ');
+        const hasNoTLD = !input.includes('.com') && !input.includes('.org') && !input.includes('.net') && !input.includes('.io') && !input.includes('.co');
+        const startsWithProtocol = input.startsWith('http://') || input.startsWith('https://');
+
+        return (hasSpaces || hasNoTLD) && !startsWithProtocol;
+    }
+
+    performWebSearch(query) {
+        // Remove any protocol if present
+        query = query.replace(/^https?:\/\//, '');
+
+        this.logTerminal(`[SEARCH] Performing web search: ${query}`);
+
+        // Create a comprehensive search results page
+        this.createSearchResultsPage(query);
+    }
+
+    createContentPage(url) {
+        // Create a page that provides multiple ways to access the content
+        const domain = this.extractDomain(url);
+        this.logTerminal(`[ACCESS] Creating access methods for: ${domain}`);
+
+        const contentHTML = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>HYP3RSP4C3 - Target Access</title>
+            <style>
+                body { 
+                    background: linear-gradient(135deg, #0a0a0a, #1a1a1a);
+                    color: #00ff41; 
+                    font-family: 'Source Code Pro', monospace; 
+                    margin: 0; 
+                    padding: 0;
+                    min-height: 100vh;
+                }
+                .container { 
+                    max-width: 800px; 
+                    margin: 0 auto; 
+                    padding: 40px 20px;
+                }
+                .header {
+                    text-align: center;
+                    margin-bottom: 40px;
+                    border-bottom: 2px solid #00ff41;
+                    padding-bottom: 20px;
+                }
+                .target-info {
+                    background: rgba(26, 26, 26, 0.8);
+                    border: 2px solid #00ff41;
+                    border-radius: 10px;
+                    padding: 30px;
+                    margin-bottom: 30px;
+                    box-shadow: 0 0 20px rgba(0, 255, 65, 0.3);
+                }
+                .access-methods {
+                    display: grid;
+                    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+                    gap: 20px;
+                    margin-top: 30px;
+                }
+                .access-card {
+                    background: rgba(42, 42, 42, 0.8);
+                    border: 1px solid #333;
+                    border-radius: 8px;
+                    padding: 25px;
+                    transition: all 0.3s ease;
+                }
+                .access-card:hover {
+                    border-color: #00ffff;
+                    box-shadow: 0 0 15px rgba(0, 255, 255, 0.3);
+                    transform: translateY(-2px);
+                }
+                .method-title {
+                    color: #00ffff;
+                    font-size: 18px;
+                    font-weight: bold;
+                    margin-bottom: 15px;
+                }
+                .method-desc {
+                    color: #ccc;
+                    margin-bottom: 20px;
+                    line-height: 1.5;
+                }
+                .access-btn {
+                    background: linear-gradient(135deg, #00ff41, #00ffff);
+                    color: #0a0a0a;
+                    border: none;
+                    padding: 12px 24px;
+                    border-radius: 5px;
+                    font-weight: bold;
+                    cursor: pointer;
+                    width: 100%;
+                    font-size: 14px;
+                    text-transform: uppercase;
+                }
+                .access-btn:hover {
+                    background: linear-gradient(135deg, #00ffff, #00ff41);
+                }
+                .search-section {
+                    margin-top: 40px;
+                    padding: 20px;
+                    background: rgba(0, 0, 0, 0.5);
+                    border-radius: 8px;
+                }
+                .search-input {
+                    width: 100%;
+                    padding: 15px;
+                    background: #1a1a1a;
+                    border: 2px solid #00ff41;
+                    color: #00ff41;
+                    border-radius: 5px;
+                    font-family: inherit;
+                    margin-bottom: 15px;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1>TARGET ACCESS: ${domain}</h1>
+                    <p>Multiple infiltration methods available</p>
+                </div>
+                
+                <div class="target-info">
+                    <h2>🎯 TARGET: ${url}</h2>
+                    <p>The target website uses security measures that prevent direct embedding. Choose your preferred access method below:</p>
+                </div>
+                
+                <div class="access-methods">
+                    <div class="access-card">
+                        <div class="method-title">🌐 Direct Access</div>
+                        <div class="method-desc">Open the target in a new window/tab. Most reliable method for full functionality.</div>
+                        <button class="access-btn" onclick="window.open('${url}', '_blank')">Launch External Window</button>
+                    </div>
+                    
+                    <div class="access-card">
+                        <div class="method-title">🔍 Search About</div>
+                        <div class="method-desc">Find information, reviews, and related content about this website.</div>
+                        <button class="access-btn" onclick="searchAbout('${domain}')">Search Information</button>
+                    </div>
+                    
+                    <div class="access-card">
+                        <div class="method-title">📱 Mobile Version</div>
+                        <div class="method-desc">Try accessing the mobile-optimized version which may have fewer restrictions.</div>
+                        <button class="access-btn" onclick="tryMobile('${url}')">Access Mobile Site</button>
+                    </div>
+                    
+                    <div class="access-card">
+                        <div class="method-title">🔗 Related Links</div>
+                        <div class="method-desc">Find official social media, documentation, and alternative access points.</div>
+                        <button class="access-btn" onclick="findRelated('${domain}')">Find Related Sites</button>
+                    </div>
+                </div>
+                
+                <div class="search-section">
+                    <h3>🔍 Alternative Search</h3>
+                    <input type="text" class="search-input" placeholder="Try a different search or website..." id="altSearch">
+                    <button class="access-btn" onclick="performNewSearch()">New Search</button>
+                </div>
+            </div>
+            
+            <script>
+                function searchAbout(domain) {
+                    const query = domain + ' information reviews';
+                    parent.hyperspaceBrowser.performWebSearch(query);
+                }
+                
+                function tryMobile(url) {
+                    const mobileUrl = url.replace('www.', 'm.');
+                    window.open(mobileUrl, '_blank');
+                }
+                
+                function findRelated(domain) {
+                    const query = 'site:' + domain + ' OR ' + domain + ' official social media links';
+                    parent.hyperspaceBrowser.performWebSearch(query);
+                }
+                
+                function performNewSearch() {
+                    const query = document.getElementById('altSearch').value;
+                    if (query.trim()) {
+                        parent.hyperspaceBrowser.navigate(query);
+                    }
+                }
+                
+                document.getElementById('altSearch').addEventListener('keypress', function(e) {
+                    if (e.key === 'Enter') {
+                        performNewSearch();
+                    }
+                });
+            </script>
+        </body>
+        </html>`;
+
+        this.elements.contentFrame.srcdoc = contentHTML;
+    }
+
+    extractDomain(url) {
+        try {
+            return new URL(url).hostname.replace('www.', '');
+        } catch {
+            return url.split('/')[0].replace('www.', '');
+        }
+    }
+
+    createSearchResultsPage(query) {
+            this.logTerminal(`[RESULTS] Generating search results for: ${query}`);
+
+            const results = this.generateComprehensiveResults(query);
+            const searchHTML = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>HYP3RSP4C3 Search Results</title>
+            <style>
+                body { 
+                    background: linear-gradient(135deg, #0a0a0a, #1a1a1a);
+                    color: #00ff41; 
+                    font-family: 'Source Code Pro', monospace; 
+                    margin: 0; 
+                    padding: 0;
+                    line-height: 1.6;
+                }
+                .search-header {
+                    background: rgba(26, 26, 26, 0.9);
+                    padding: 20px;
+                    border-bottom: 2px solid #00ff41;
+                    box-shadow: 0 2px 10px rgba(0, 255, 65, 0.3);
+                }
+                .search-box {
+                    display: flex;
+                    gap: 15px;
+                    align-items: center;
+                    max-width: 800px;
+                    margin: 0 auto;
+                }
+                .search-input {
+                    flex: 1;
+                    padding: 15px;
+                    background: #0a0a0a;
+                    border: 2px solid #333;
+                    color: #00ff41;
+                    border-radius: 5px;
+                    font-family: inherit;
+                    font-size: 16px;
+                }
+                .search-input:focus {
+                    border-color: #00ffff;
+                    box-shadow: 0 0 10px rgba(0, 255, 255, 0.5);
+                    outline: none;
+                }
+                .search-btn {
+                    background: linear-gradient(135deg, #00ff41, #00ffff);
+                    color: #0a0a0a;
+                    border: none;
+                    padding: 15px 25px;
+                    border-radius: 5px;
+                    font-weight: bold;
+                    cursor: pointer;
+                }
+                .results-container {
+                    max-width: 800px;
+                    margin: 0 auto;
+                    padding: 30px 20px;
+                }
+                .results-header {
+                    margin-bottom: 30px;
+                    padding-bottom: 15px;
+                    border-bottom: 1px solid #333;
+                }
+                .result-item {
+                    background: rgba(26, 26, 26, 0.6);
+                    border: 1px solid #333;
+                    border-radius: 8px;
+                    padding: 25px;
+                    margin-bottom: 20px;
+                    transition: all 0.3s ease;
+                }
+                .result-item:hover {
+                    border-color: #00ffff;
+                    box-shadow: 0 0 15px rgba(0, 255, 255, 0.2);
+                    transform: translateY(-2px);
+                }
+                .result-title {
+                    color: #00ffff;
+                    font-size: 20px;
+                    font-weight: bold;
+                    margin-bottom: 8px;
+                    cursor: pointer;
+                }
+                .result-url {
+                    color: #00ff41;
+                    font-size: 14px;
+                    margin-bottom: 12px;
+                }
+                .result-desc {
+                    color: #ccc;
+                    margin-bottom: 15px;
+                    line-height: 1.5;
+                }
+                .result-actions {
+                    display: flex;
+                    gap: 10px;
+                    flex-wrap: wrap;
+                }
+                .action-btn {
+                    background: rgba(0, 255, 65, 0.2);
+                    border: 1px solid #00ff41;
+                    color: #00ff41;
+                    padding: 8px 16px;
+                    border-radius: 4px;
+                    cursor: pointer;
+                    font-size: 12px;
+                    text-transform: uppercase;
+                    transition: all 0.3s ease;
+                }
+                .action-btn:hover {
+                    background: #00ff41;
+                    color: #0a0a0a;
+                }
+                .quick-links {
+                    background: rgba(42, 42, 42, 0.8);
+                    border: 1px solid #333;
+                    border-radius: 8px;
+                    padding: 20px;
+                    margin-bottom: 30px;
+                }
+                .quick-links h3 {
+                    color: #00ffff;
+                    margin-bottom: 15px;
+                }
+                .link-grid {
+                    display: grid;
+                    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+                    gap: 10px;
+                }
+                .quick-link {
+                    background: rgba(0, 0, 0, 0.5);
+                    border: 1px solid #333;
+                    padding: 10px 15px;
+                    border-radius: 4px;
+                    cursor: pointer;
+                    text-align: center;
+                    transition: all 0.3s ease;
+                }
+                .quick-link:hover {
+                    border-color: #00ffff;
+                    background: rgba(0, 255, 255, 0.1);
+                }
+            </style>
+        </head>
+        <body>
+            <div class="search-header">
+                <div class="search-box">
+                    <input type="text" class="search-input" value="${query}" id="searchInput" placeholder="Enter search query...">
+                    <button class="search-btn" onclick="newSearch()">SEARCH</button>
+                </div>
+            </div>
+            
+            <div class="results-container">
+                <div class="results-header">
+                    <h2>🔍 Search Results for: "${query}"</h2>
+                    <p>Found multiple relevant targets in the data matrix</p>
+                </div>
+                
+                ${this.generateQuickLinksSection(query)}
+                
+                <div class="results-list">
+                    ${results.map(result => `
+                        <div class="result-item">
+                            <div class="result-title" onclick="visitSite('${result.url}')">${result.title}</div>
+                            <div class="result-url">${result.url}</div>
+                            <div class="result-desc">${result.desc}</div>
+                            <div class="result-actions">
+                                <button class="action-btn" onclick="visitSite('${result.url}')">Visit Site</button>
+                                <button class="action-btn" onclick="searchMore('${result.title}')">Search More</button>
+                                <button class="action-btn" onclick="getInfo('${result.domain}')">Site Info</button>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+            
+            <script>
+                function newSearch() {
+                    const query = document.getElementById('searchInput').value;
+                    if (query.trim()) {
+                        parent.hyperspaceBrowser.performWebSearch(query);
+                    }
+                }
+                
+                function visitSite(url) {
+                    parent.hyperspaceBrowser.navigate(url);
+                }
+                
+                function searchMore(title) {
+                    parent.hyperspaceBrowser.performWebSearch(title);
+                }
+                
+                function getInfo(domain) {
+                    parent.hyperspaceBrowser.performWebSearch(domain + ' information about website');
+                }
+                
+                document.getElementById('searchInput').addEventListener('keypress', function(e) {
+                    if (e.key === 'Enter') {
+                        newSearch();
+                    }
+                });
+            </script>
+        </body>
+        </html>`;
+        
+        this.elements.contentFrame.srcdoc = searchHTML;
+    }
+
+    generateComprehensiveResults(query) {
+        const lowerQuery = query.toLowerCase();
+        const results = [];
+        
+        // Popular websites database
+        const siteDatabase = {
+            youtube: { url: 'https://www.youtube.com', desc: 'Watch and share videos, subscribe to channels, and discover content from creators worldwide.' },
+            google: { url: 'https://www.google.com', desc: 'Search the web for information, images, videos, and more.' },
+            github: { url: 'https://github.com', desc: 'Host and review code, manage projects, and collaborate with developers.' },
+            reddit: { url: 'https://www.reddit.com', desc: 'Dive into communities and discussions on topics you care about.' },
+            twitter: { url: 'https://twitter.com', desc: 'Connect with people and discover what\'s happening in the world.' },
+            facebook: { url: 'https://www.facebook.com', desc: 'Connect with friends and family, share photos and updates.' },
+            instagram: { url: 'https://www.instagram.com', desc: 'Share photos and videos with friends and followers.' },
+            linkedin: { url: 'https://www.linkedin.com', desc: 'Professional networking and career development platform.' },
+            stackoverflow: { url: 'https://stackoverflow.com', desc: 'Get answers to programming questions from the developer community.' },
+            amazon: { url: 'https://www.amazon.com', desc: 'Online shopping for books, electronics, home goods, and more.' },
+            netflix: { url: 'https://www.netflix.com', desc: 'Stream TV shows and movies on your favorite devices.' },
+            spotify: { url: 'https://www.spotify.com', desc: 'Listen to music and podcasts for free or with premium features.' },
+            wikipedia: { url: 'https://www.wikipedia.org', desc: 'Free online encyclopedia with articles on every topic.' },
+            twitch: { url: 'https://www.twitch.tv', desc: 'Watch live streams of games, music, and creative content.' },
+            discord: { url: 'https://discord.com', desc: 'Chat and voice communication for communities and friends.' }
+        };
+        
+        // Check for exact matches
+        for (const [key, site] of Object.entries(siteDatabase)) {
+            if (lowerQuery.includes(key)) {
+                results.push({
+                    title: key.charAt(0).toUpperCase() + key.slice(1) + ' - Official Site',
+                    url: site.url,
+                    desc: site.desc,
+                    domain: new URL(site.url).hostname
+                });
+            }
+        }
+        
+        // Add category-based results
+        if (lowerQuery.includes('video') || lowerQuery.includes('movie') || lowerQuery.includes('stream')) {
+            results.push(
+                { title: 'YouTube - Video Platform', url: 'https://www.youtube.com', desc: 'World\'s largest video sharing platform with billions of videos.', domain: 'youtube.com' },
+                { title: 'Netflix - Streaming Service', url: 'https://www.netflix.com', desc: 'Premium streaming service for movies and TV shows.', domain: 'netflix.com' },
+                { title: 'Twitch - Live Streaming', url: 'https://www.twitch.tv', desc: 'Live streaming platform for gaming and creative content.', domain: 'twitch.tv' }
+            );
+        }
+        
+        if (lowerQuery.includes('social') || lowerQuery.includes('friends') || lowerQuery.includes('chat')) {
+            results.push(
+                { title: 'Facebook - Social Network', url: 'https://www.facebook.com', desc: 'Connect with friends and family around the world.', domain: 'facebook.com' },
+                { title: 'Twitter - Microblogging', url: 'https://twitter.com', desc: 'Share thoughts and follow trending topics worldwide.', domain: 'twitter.com' },
+                { title: 'Discord - Chat Platform', url: 'https://discord.com', desc: 'Voice, video and text chat for communities and friends.', domain: 'discord.com' }
+            );
+        }
+        
+        if (lowerQuery.includes('code') || lowerQuery.includes('program') || lowerQuery.includes('developer')) {
+            results.push(
+                { title: 'GitHub - Code Repository', url: 'https://github.com', desc: 'Host, review, and collaborate on code projects.', domain: 'github.com' },
+                { title: 'Stack Overflow - Programming Q&A', url: 'https://stackoverflow.com', desc: 'Get help with programming questions and problems.', domain: 'stackoverflow.com' },
+                { title: 'CodePen - Code Playground', url: 'https://codepen.io', desc: 'Online code editor and developer community.', domain: 'codepen.io' }
+            );
+        }
+        
+        if (lowerQuery.includes('music') || lowerQuery.includes('song') || lowerQuery.includes('audio')) {
+            results.push(
+                { title: 'Spotify - Music Streaming', url: 'https://www.spotify.com', desc: 'Stream millions of songs and podcasts.', domain: 'spotify.com' },
+                { title: 'SoundCloud - Audio Platform', url: 'https://soundcloud.com', desc: 'Discover and share audio content from creators.', domain: 'soundcloud.com' }
+            );
+        }
+        
+        // Add generic results for any query
+        const genericResults = [
+            {
+                title: `${query} - Wikipedia`,
+                url: `https://en.wikipedia.org/wiki/${encodeURIComponent(query)}`,
+                desc: `Wikipedia article about ${query} with comprehensive information and references.`,
+                domain: 'wikipedia.org'
+            },
+            {
+                title: `${query} - Google Search`,
+                url: `https://www.google.com/search?q=${encodeURIComponent(query)}`,
+                desc: `Google search results for ${query} from across the web.`,
+                domain: 'google.com'
+            },
+            {
+                title: `${query} - Official Website`,
+                url: `https://www.${query.toLowerCase().replace(/\s+/g, '')}.com`,
+                desc: `Official website for ${query}. Find authentic information and services.`,
+                domain: `${query.toLowerCase().replace(/\s+/g, '')}.com`
+            }
         ];
+        
+        results.push(...genericResults);
+        
+        // Remove duplicates and return top 8 results
+        const uniqueResults = results.filter((result, index, self) => 
+            index === self.findIndex(r => r.url === result.url)
+        );
+        
+        return uniqueResults.slice(0, 8);
+    }
 
-        // Special handling for common sites
-        if (url.includes('google.com')) {
-            // For Google, create a custom search interface
-            this.createCustomGoogleInterface(url);
-            return;
-        }
-
-        if (url.includes('github.com')) {
-            // GitHub works better with direct embedding
-            this.elements.contentFrame.src = url;
-            this.logTerminal(`[PROXY] GitHub target - using direct connection`);
-            return;
-        }
-
-        // Try proxy services in order
-        this.tryProxyServices(url, proxyServices, 0);
+    generateQuickLinksSection(query) {
+        const quickLinks = [
+            { name: 'YouTube', action: "visitSite('https://www.youtube.com')" },
+            { name: 'Google', action: "visitSite('https://www.google.com')" },
+            { name: 'GitHub', action: "visitSite('https://github.com')" },
+            { name: 'Reddit', action: "visitSite('https://www.reddit.com')" },
+            { name: 'Wikipedia', action: "visitSite('https://www.wikipedia.org')" },
+            { name: 'Stack Overflow', action: "visitSite('https://stackoverflow.com')" }
+        ];
+        
+        return `
+        <div class="quick-links">
+            <h3>🚀 Quick Access Portals</h3>
+            <div class="link-grid">
+                ${quickLinks.map(link => `
+                    <div class="quick-link" onclick="${link.action}">${link.name}</div>
+                `).join('')}
+            </div>
+        </div>`;
     }
 
     createCustomGoogleInterface(url) {
