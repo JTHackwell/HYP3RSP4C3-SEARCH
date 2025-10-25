@@ -262,15 +262,19 @@ class HyperSpaceBrowser {
     attemptProxyLoad(url) {
         this.logTerminal(`[PROXY] Initiating proxy connection to: ${url}`);
 
-        // List of working CORS proxy services
+        // More reliable proxy services with better URLs
         const proxyServices = [
-            `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
+            // AllOrigins with raw content
+            `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+            // Proxy using different approach
             `https://corsproxy.io/?${encodeURIComponent(url)}`,
-            `https://cors-anywhere.herokuapp.com/${url}`,
-            `https://thingproxy.freeboard.io/fetch/${url}`
+            // ThingProxy - often works
+            `https://thingproxy.freeboard.io/fetch/${url}`,
+            // Direct iframe attempt (for sites that allow it)
+            url
         ];
 
-        // Special handling for popular sites
+        // Special handling for popular sites that need custom approaches
         if (url.includes('youtube.com')) {
             this.loadYouTubeProxy(url);
             return;
@@ -281,73 +285,219 @@ class HyperSpaceBrowser {
             return;
         }
 
-        // Try proxy services in sequence
-        this.tryProxyService(url, proxyServices, 0);
+        if (url.includes('wikipedia.org') || url.includes('example.com') || url.includes('httpbin.org')) {
+            // These sites often work well with proxies
+            this.tryReliableProxy(url, proxyServices);
+        } else {
+            // For other sites, try a more cautious approach
+            this.tryProxyWithFallback(url, proxyServices);
+        }
+    }
+
+    tryReliableProxy(url, proxyServices) {
+        this.logTerminal(`[PROXY] Using reliable proxy method for: ${this.extractDomain(url)}`);
+
+        let proxyIndex = 0;
+        let hasSucceeded = false;
+
+        const tryNextProxy = () => {
+            if (proxyIndex >= proxyServices.length || hasSucceeded) {
+                if (!hasSucceeded) {
+                    this.logTerminal(`[ERROR] All proxy attempts failed`);
+                    this.createFallbackInterface(url);
+                }
+                return;
+            }
+
+            const proxyUrl = proxyServices[proxyIndex];
+            const serviceName = this.getProxyServiceName(proxyUrl);
+
+            this.logTerminal(`[PROXY] Attempting ${serviceName}...`);
+            proxyIndex++;
+
+            if (proxyUrl === url) {
+                // Direct attempt
+                this.testDirectLoad(url, () => {
+                    if (!hasSucceeded) {
+                        hasSucceeded = true;
+                        this.logTerminal(`[SUCCESS] Direct connection successful`);
+                        this.elements.contentFrame.src = url;
+                    }
+                }, tryNextProxy);
+            } else if (proxyUrl.includes('allorigins.win/raw')) {
+                // Raw content proxy
+                this.testRawProxy(proxyUrl, () => {
+                    if (!hasSucceeded) {
+                        hasSucceeded = true;
+                        this.logTerminal(`[SUCCESS] Raw proxy connection successful`);
+                        this.elements.contentFrame.src = proxyUrl;
+                    }
+                }, tryNextProxy);
+            } else {
+                // Other proxy services
+                this.testIframeProxy(proxyUrl, () => {
+                    if (!hasSucceeded) {
+                        hasSucceeded = true;
+                        this.logTerminal(`[SUCCESS] Proxy connection successful via ${serviceName}`);
+                        this.elements.contentFrame.src = proxyUrl;
+                    }
+                }, tryNextProxy);
+            }
+        };
+
+        tryNextProxy();
+    }
+
+    tryProxyWithFallback(url, proxyServices) {
+        this.logTerminal(`[PROXY] Cautious proxy attempt for: ${this.extractDomain(url)}`);
+
+        // Try only the most reliable proxy first
+        const bestProxy = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+
+        this.testRawProxy(bestProxy, () => {
+            this.logTerminal(`[SUCCESS] Proxy connection established`);
+            this.elements.contentFrame.src = bestProxy;
+        }, () => {
+            this.logTerminal(`[PROXY] Primary proxy failed, showing access options`);
+            this.createFallbackInterface(url);
+        });
+    }
+
+    testDirectLoad(url, onSuccess, onFailure) {
+        const testFrame = document.createElement('iframe');
+        testFrame.style.display = 'none';
+        testFrame.style.width = '1px';
+        testFrame.style.height = '1px';
+
+        let resolved = false;
+
+        const cleanup = () => {
+            if (document.body.contains(testFrame)) {
+                document.body.removeChild(testFrame);
+            }
+        };
+
+        const timeout = setTimeout(() => {
+            if (!resolved) {
+                resolved = true;
+                cleanup();
+                onFailure();
+            }
+        }, 3000);
+
+        testFrame.onload = () => {
+            if (!resolved) {
+                resolved = true;
+                clearTimeout(timeout);
+                cleanup();
+                onSuccess();
+            }
+        };
+
+        testFrame.onerror = () => {
+            if (!resolved) {
+                resolved = true;
+                clearTimeout(timeout);
+                cleanup();
+                onFailure();
+            }
+        };
+
+        document.body.appendChild(testFrame);
+        testFrame.src = url;
+    }
+
+    testRawProxy(proxyUrl, onSuccess, onFailure) {
+        const testFrame = document.createElement('iframe');
+        testFrame.style.display = 'none';
+        testFrame.style.width = '1px';
+        testFrame.style.height = '1px';
+
+        let resolved = false;
+
+        const cleanup = () => {
+            if (document.body.contains(testFrame)) {
+                document.body.removeChild(testFrame);
+            }
+        };
+
+        const timeout = setTimeout(() => {
+            if (!resolved) {
+                resolved = true;
+                cleanup();
+                onFailure();
+            }
+        }, 4000);
+
+        testFrame.onload = () => {
+            if (!resolved) {
+                resolved = true;
+                clearTimeout(timeout);
+                cleanup();
+                onSuccess();
+            }
+        };
+
+        testFrame.onerror = () => {
+            if (!resolved) {
+                resolved = true;
+                clearTimeout(timeout);
+                cleanup();
+                onFailure();
+            }
+        };
+
+        document.body.appendChild(testFrame);
+        testFrame.src = proxyUrl;
+    }
+
+    testIframeProxy(proxyUrl, onSuccess, onFailure) {
+        const testFrame = document.createElement('iframe');
+        testFrame.style.display = 'none';
+        testFrame.style.width = '1px';
+        testFrame.style.height = '1px';
+
+        let resolved = false;
+
+        const cleanup = () => {
+            if (document.body.contains(testFrame)) {
+                document.body.removeChild(testFrame);
+            }
+        };
+
+        const timeout = setTimeout(() => {
+            if (!resolved) {
+                resolved = true;
+                cleanup();
+                onFailure();
+            }
+        }, 3000);
+
+        testFrame.onload = () => {
+            if (!resolved) {
+                resolved = true;
+                clearTimeout(timeout);
+                cleanup();
+                onSuccess();
+            }
+        };
+
+        testFrame.onerror = () => {
+            if (!resolved) {
+                resolved = true;
+                clearTimeout(timeout);
+                cleanup();
+                onFailure();
+            }
+        };
+
+        document.body.appendChild(testFrame);
+        testFrame.src = proxyUrl;
     }
 
     tryProxyService(url, proxyServices, index) {
-        // Fast parallel approach - try all proxies simultaneously
-        this.logTerminal(`[PROXY] Initiating fast parallel connection attempts...`);
-        this.tryAllProxiesParallel(url, proxyServices);
-    }
-
-    tryAllProxiesParallel(url, proxyServices) {
-        let hasSucceeded = false;
-        const startTime = Date.now();
-
-        // Track attempts for logging
-        let completedAttempts = 0;
-        const totalAttempts = proxyServices.length;
-
-        // Create promises for all proxy attempts
-        const proxyPromises = proxyServices.map((proxyUrl, index) => {
-            const serviceName = this.getProxyServiceName(proxyUrl);
-
-            return new Promise((resolve, reject) => {
-                if (hasSucceeded) {
-                    reject('Another proxy already succeeded');
-                    return;
-                }
-
-                this.logTerminal(`[PROXY] Route ${index + 1}: ${serviceName} - Starting...`);
-
-                if (proxyUrl.includes('allorigins.win')) {
-                    // Fast AllOrigins attempt with 2 second timeout
-                    this.fastAllOriginsLoad(url, resolve, reject, serviceName);
-                } else {
-                    // Fast iframe attempt with 1.5 second timeout
-                    this.fastIframeLoad(proxyUrl, url, resolve, reject, serviceName);
-                }
-            });
-        });
-
-        // Race all proxy attempts - first one to succeed wins
-        Promise.race(proxyPromises.map(p => p.catch(e => ({ error: e }))))
-            .then(result => {
-                if (result && !result.error && !hasSucceeded) {
-                    hasSucceeded = true;
-                    const loadTime = ((Date.now() - startTime) / 1000).toFixed(2);
-                    this.logTerminal(`[SUCCESS] Proxy connected in ${loadTime}s via ${result.service}`);
-                }
-            })
-            .catch(() => {
-                // All failed, but check if any succeeded in the meantime
-                setTimeout(() => {
-                    if (!hasSucceeded) {
-                        this.logTerminal(`[ERROR] All fast proxy routes failed`);
-                        this.createFallbackInterface(url);
-                    }
-                }, 100);
-            });
-
-        // Set overall timeout of 3 seconds for all attempts
-        setTimeout(() => {
-            if (!hasSucceeded) {
-                hasSucceeded = true;
-                this.logTerminal(`[TIMEOUT] Fast proxy timeout - switching to fallback`);
-                this.createFallbackInterface(url);
-            }
-        }, 3000);
+        // Redirect to new proxy method
+        this.tryProxyWithFallback(url, proxyServices);
     }
 
     fastAllOriginsLoad(url, resolve, reject, serviceName) {
