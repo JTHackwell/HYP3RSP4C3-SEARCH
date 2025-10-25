@@ -258,8 +258,500 @@ class HyperSpaceBrowser {
             return;
         }
 
-        // For direct URLs, create a content page with multiple options
-        this.createContentPage(url);
+        // For direct URLs, attempt to load through proxy services
+        this.attemptProxyLoad(url);
+    }
+
+    attemptProxyLoad(url) {
+        this.logTerminal(`[PROXY] Initiating proxy connection to: ${url}`);
+
+        // List of working CORS proxy services
+        const proxyServices = [
+            `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
+            `https://corsproxy.io/?${encodeURIComponent(url)}`,
+            `https://cors-anywhere.herokuapp.com/${url}`,
+            `https://thingproxy.freeboard.io/fetch/${url}`
+        ];
+
+        // Special handling for popular sites
+        if (url.includes('youtube.com')) {
+            this.loadYouTubeProxy(url);
+            return;
+        }
+
+        if (url.includes('google.com')) {
+            this.loadGoogleProxy(url);
+            return;
+        }
+
+        // Try proxy services in sequence
+        this.tryProxyService(url, proxyServices, 0);
+    }
+
+    tryProxyService(url, proxyServices, index) {
+        if (index >= proxyServices.length) {
+            this.logTerminal(`[ERROR] All proxy routes failed for: ${url}`);
+            this.createFallbackInterface(url);
+            return;
+        }
+
+        const proxyUrl = proxyServices[index];
+        const serviceName = this.getProxyServiceName(proxyUrl);
+
+        this.logTerminal(`[PROXY] Attempting route ${index + 1}: ${serviceName}`);
+
+        // For AllOrigins API, we need to fetch the content and display it
+        if (proxyUrl.includes('allorigins.win')) {
+            this.loadThroughAllOrigins(url, proxyServices, index);
+        } else {
+            // For other proxies, try direct iframe loading
+            this.loadThroughDirectProxy(proxyUrl, url, proxyServices, index);
+        }
+    }
+
+    loadThroughAllOrigins(url, proxyServices, index) {
+        const apiUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+
+        fetch(apiUrl)
+            .then(response => response.json())
+            .then(data => {
+                if (data.contents) {
+                    this.logTerminal(`[SUCCESS] Content retrieved via AllOrigins proxy`);
+                    this.displayProxiedContent(data.contents, url);
+                } else {
+                    throw new Error('No content received');
+                }
+            })
+            .catch(error => {
+                this.logTerminal(`[PROXY] AllOrigins failed: ${error.message}`);
+                this.tryProxyService(url, proxyServices, index + 1);
+            });
+    }
+
+    loadThroughDirectProxy(proxyUrl, originalUrl, proxyServices, index) {
+        // Create a test iframe to see if the proxy works
+        const testFrame = document.createElement('iframe');
+        testFrame.style.display = 'none';
+        testFrame.style.width = '100%';
+        testFrame.style.height = '100%';
+        testFrame.style.border = 'none';
+
+        let loadTimeout;
+        let hasLoaded = false;
+
+        testFrame.onload = () => {
+            if (!hasLoaded) {
+                hasLoaded = true;
+                clearTimeout(loadTimeout);
+                this.logTerminal(`[SUCCESS] Proxy connection established via route ${index + 1}`);
+
+                // Replace the main frame with the working proxy
+                this.elements.contentFrame.src = proxyUrl;
+                document.body.removeChild(testFrame);
+            }
+        };
+
+        testFrame.onerror = () => {
+            if (!hasLoaded) {
+                hasLoaded = true;
+                clearTimeout(loadTimeout);
+                this.logTerminal(`[PROXY] Route ${index + 1} failed, trying next...`);
+                document.body.removeChild(testFrame);
+                this.tryProxyService(originalUrl, proxyServices, index + 1);
+            }
+        };
+
+        // Set a timeout for the test
+        loadTimeout = setTimeout(() => {
+            if (!hasLoaded) {
+                hasLoaded = true;
+                this.logTerminal(`[PROXY] Route ${index + 1} timeout, trying next...`);
+                if (document.body.contains(testFrame)) {
+                    document.body.removeChild(testFrame);
+                }
+                this.tryProxyService(originalUrl, proxyServices, index + 1);
+            }
+        }, 5000);
+
+        testFrame.src = proxyUrl;
+        document.body.appendChild(testFrame);
+    }
+
+    displayProxiedContent(htmlContent, originalUrl) {
+        // Process the HTML content to fix relative URLs
+        const processedContent = this.processHtmlContent(htmlContent, originalUrl);
+
+        // Display the content in the iframe
+        this.elements.contentFrame.srcdoc = processedContent;
+    }
+
+    processHtmlContent(html, baseUrl) {
+        // Extract domain from base URL
+        const baseDomain = new URL(baseUrl).origin;
+
+        // Fix relative URLs in the HTML
+        let processedHtml = html;
+
+        // Fix relative src and href attributes
+        processedHtml = processedHtml.replace(/src="\/([^"]+)"/g, `src="${baseDomain}/$1"`);
+        processedHtml = processedHtml.replace(/href="\/([^"]+)"/g, `href="${baseDomain}/$1"`);
+
+        // Add base tag to handle other relative URLs
+        if (!processedHtml.includes('<base')) {
+            processedHtml = processedHtml.replace('<head>', `<head><base href="${baseDomain}/">`);
+        }
+
+        // Add proxy notice
+        const proxyNotice = `
+        <div style="position: fixed; top: 0; left: 0; right: 0; background: rgba(0,0,0,0.9); color: #00ff41; padding: 10px; text-align: center; z-index: 10000; font-family: monospace; border-bottom: 2px solid #00ff41;">
+            🔒 HYP3RSP4C3 PROXY ACTIVE | IP MASKED | CONNECTION SECURED
+        </div>
+        <style>body { margin-top: 50px !important; }</style>`;
+
+        processedHtml = processedHtml.replace('<body', proxyNotice + '<body');
+
+        return processedHtml;
+    }
+
+    loadYouTubeProxy(url) {
+        this.logTerminal(`[YOUTUBE] Attempting YouTube proxy connection...`);
+
+        // Try multiple YouTube proxy methods
+        const youtubeProxies = [
+            `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
+            `https://invidious.io/${url.replace('https://www.youtube.com', '')}`,
+            `https://corsproxy.io/?${encodeURIComponent(url)}`
+        ];
+
+        this.tryYouTubeProxy(url, youtubeProxies, 0);
+    }
+
+    tryYouTubeProxy(originalUrl, proxies, index) {
+        if (index >= proxies.length) {
+            this.logTerminal(`[YOUTUBE] All YouTube proxies failed, creating alternative interface`);
+            this.createYouTubeAlternative(originalUrl);
+            return;
+        }
+
+        const proxyUrl = proxies[index];
+        this.logTerminal(`[YOUTUBE] Trying YouTube proxy ${index + 1}...`);
+
+        if (proxyUrl.includes('allorigins.win')) {
+            fetch(proxyUrl)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.contents) {
+                        this.logTerminal(`[SUCCESS] YouTube content loaded via proxy`);
+                        this.displayProxiedContent(data.contents, originalUrl);
+                    } else {
+                        throw new Error('No content received');
+                    }
+                })
+                .catch(() => {
+                    this.tryYouTubeProxy(originalUrl, proxies, index + 1);
+                });
+        } else {
+            // Try direct iframe loading
+            this.elements.contentFrame.src = proxyUrl;
+
+            setTimeout(() => {
+                // Check if it loaded successfully (basic check)
+                this.logTerminal(`[YOUTUBE] Proxy attempt ${index + 1} completed`);
+            }, 3000);
+        }
+    }
+
+    loadGoogleProxy(url) {
+        this.logTerminal(`[GOOGLE] Loading Google through proxy...`);
+
+        // For Google, try the AllOrigins approach
+        const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+
+        fetch(proxyUrl)
+            .then(response => response.json())
+            .then(data => {
+                if (data.contents) {
+                    this.logTerminal(`[SUCCESS] Google loaded via AllOrigins proxy`);
+                    this.displayProxiedContent(data.contents, url);
+                } else {
+                    // Fallback to search interface
+                    this.createSearchResultsPage(this.extractSearchQuery(url) || '');
+                }
+            })
+            .catch(error => {
+                this.logTerminal(`[GOOGLE] Proxy failed, using search interface`);
+                this.createSearchResultsPage(this.extractSearchQuery(url) || '');
+            });
+    }
+
+    createYouTubeAlternative(url) {
+        // Create a YouTube-like interface that works
+        const youtubeHTML = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>HYP3RSP4C3 YouTube Proxy</title>
+            <style>
+                body { background: #0a0a0a; color: #00ff41; font-family: monospace; padding: 20px; }
+                .container { max-width: 800px; margin: 0 auto; }
+                .header { text-align: center; margin-bottom: 30px; }
+                .video-section { background: #1a1a1a; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
+                .btn { background: linear-gradient(135deg, #00ff41, #00ffff); color: #0a0a0a; padding: 12px 24px; border: none; border-radius: 5px; cursor: pointer; margin: 5px; }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1>🎥 HYP3RSP4C3 YouTube ACCESS</h1>
+                    <p>Secure YouTube proxy interface</p>
+                </div>
+                <div class="video-section">
+                    <h3>YouTube Access Options:</h3>
+                    <button class="btn" onclick="window.open('${url}', '_blank')">Open YouTube Directly</button>
+                    <button class="btn" onclick="tryAlternative()">Try Invidious (YouTube Alternative)</button>
+                    <button class="btn" onclick="searchYoutube()">Search YouTube Content</button>
+                </div>
+                <div class="video-section">
+                    <h3>Enter YouTube Video URL or Search:</h3>
+                    <input type="text" id="ytInput" style="width: 100%; padding: 10px; background: #0a0a0a; border: 1px solid #00ff41; color: #00ff41; margin: 10px 0;">
+                    <button class="btn" onclick="processYoutube()">ACCESS VIDEO</button>
+                </div>
+            </div>
+            <script>
+                function tryAlternative() {
+                    window.open('https://invidious.io', '_blank');
+                }
+                function searchYoutube() {
+                    parent.hyperspaceBrowser.performWebSearch('youtube videos');
+                }
+                function processYoutube() {
+                    const input = document.getElementById('ytInput').value;
+                    if (input.includes('youtube.com') || input.includes('youtu.be')) {
+                        parent.hyperspaceBrowser.navigate(input);
+                    } else {
+                        parent.hyperspaceBrowser.performWebSearch('youtube ' + input);
+                    }
+                }
+            </script>
+        </body>
+        </html>`;
+
+        this.elements.contentFrame.srcdoc = youtubeHTML;
+    }
+
+    createFallbackInterface(url) {
+        const domain = this.extractDomain(url);
+        this.logTerminal(`[FALLBACK] Creating enhanced access interface for: ${domain}`);
+
+        const fallbackHTML = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>HYP3RSP4C3 - Proxy Access</title>
+            <style>
+                body { 
+                    background: linear-gradient(135deg, #0a0a0a, #1a1a1a);
+                    color: #00ff41; 
+                    font-family: 'Source Code Pro', monospace; 
+                    margin: 0; 
+                    padding: 0;
+                    min-height: 100vh;
+                }
+                .container { 
+                    max-width: 900px; 
+                    margin: 0 auto; 
+                    padding: 40px 20px;
+                }
+                .header {
+                    text-align: center;
+                    margin-bottom: 40px;
+                    border-bottom: 2px solid #00ff41;
+                    padding-bottom: 20px;
+                }
+                .status-box {
+                    background: rgba(26, 26, 26, 0.8);
+                    border: 2px solid #ff0040;
+                    border-radius: 10px;
+                    padding: 25px;
+                    margin-bottom: 30px;
+                    box-shadow: 0 0 20px rgba(255, 0, 64, 0.3);
+                }
+                .access-methods {
+                    display: grid;
+                    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+                    gap: 20px;
+                    margin-top: 30px;
+                }
+                .method-card {
+                    background: rgba(42, 42, 42, 0.8);
+                    border: 1px solid #333;
+                    border-radius: 8px;
+                    padding: 25px;
+                    transition: all 0.3s ease;
+                }
+                .method-card:hover {
+                    border-color: #00ffff;
+                    box-shadow: 0 0 15px rgba(0, 255, 255, 0.3);
+                    transform: translateY(-2px);
+                }
+                .method-title {
+                    color: #00ffff;
+                    font-size: 18px;
+                    font-weight: bold;
+                    margin-bottom: 15px;
+                }
+                .method-desc {
+                    color: #ccc;
+                    margin-bottom: 20px;
+                    line-height: 1.5;
+                }
+                .access-btn {
+                    background: linear-gradient(135deg, #00ff41, #00ffff);
+                    color: #0a0a0a;
+                    border: none;
+                    padding: 12px 24px;
+                    border-radius: 5px;
+                    font-weight: bold;
+                    cursor: pointer;
+                    width: 100%;
+                    font-size: 14px;
+                    text-transform: uppercase;
+                    margin-bottom: 10px;
+                }
+                .access-btn:hover {
+                    background: linear-gradient(135deg, #00ffff, #00ff41);
+                }
+                .retry-section {
+                    background: rgba(0, 0, 0, 0.5);
+                    padding: 20px;
+                    border-radius: 8px;
+                    margin-top: 30px;
+                }
+                .input-field {
+                    width: 100%;
+                    padding: 15px;
+                    background: #1a1a1a;
+                    border: 2px solid #00ff41;
+                    color: #00ff41;
+                    border-radius: 5px;
+                    font-family: inherit;
+                    margin-bottom: 15px;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1>🔒 PROXY ACCESS: ${domain}</h1>
+                    <p>Multiple infiltration routes available</p>
+                </div>
+                
+                <div class="status-box">
+                    <h2>⚠️ PROXY STATUS: FALLBACK MODE</h2>
+                    <p>Primary proxy routes to <strong>${url}</strong> are currently blocked or unavailable.</p>
+                    <p>The target site may be using advanced security measures. Choose an alternative access method below:</p>
+                </div>
+                
+                <div class="access-methods">
+                    <div class="method-card">
+                        <div class="method-title">🌐 Direct Access</div>
+                        <div class="method-desc">Open the site in a new window. Your real IP will be visible, but access is guaranteed.</div>
+                        <button class="access-btn" onclick="window.open('${url}', '_blank')">Launch Direct Access</button>
+                    </div>
+                    
+                    <div class="method-card">
+                        <div class="method-title">🔄 Retry Proxy</div>
+                        <div class="method-desc">Attempt to reconnect through available proxy servers with different routes.</div>
+                        <button class="access-btn" onclick="retryProxy()">Retry Proxy Connection</button>
+                    </div>
+                    
+                    <div class="method-card">
+                        <div class="method-title">📱 Mobile Version</div>
+                        <div class="method-desc">Try the mobile version which may have fewer restrictions and lighter security.</div>
+                        <button class="access-btn" onclick="tryMobile()">Access Mobile Site</button>
+                    </div>
+                    
+                    <div class="method-card">
+                        <div class="method-title">🔍 Search Alternative</div>
+                        <div class="method-desc">Search for information about this site, alternatives, or related content.</div>
+                        <button class="access-btn" onclick="searchAbout()">Search Information</button>
+                    </div>
+                    
+                    <div class="method-card">
+                        <div class="method-title">🕸️ Cached Version</div>
+                        <div class="method-desc">Try accessing cached or archived versions of the website.</div>
+                        <button class="access-btn" onclick="tryArchive()">Access Cached Site</button>
+                    </div>
+                    
+                    <div class="method-card">
+                        <div class="method-title">🔗 Alternative Proxy</div>
+                        <div class="method-desc">Enter a custom proxy URL or try a different proxy service manually.</div>
+                        <input type="text" class="input-field" id="customProxy" placeholder="Enter custom proxy URL...">
+                        <button class="access-btn" onclick="tryCustomProxy()">Use Custom Proxy</button>
+                    </div>
+                </div>
+                
+                <div class="retry-section">
+                    <h3>🎯 Try Different Target</h3>
+                    <input type="text" class="input-field" id="newTarget" placeholder="Enter new URL or search term...">
+                    <button class="access-btn" onclick="newSearch()">New Search/Navigation</button>
+                </div>
+            </div>
+            
+            <script>
+                function retryProxy() {
+                    parent.hyperspaceBrowser.navigate('${url}');
+                }
+                
+                function tryMobile() {
+                    let mobileUrl = '${url}'.replace('www.', 'm.');
+                    if (!mobileUrl.includes('m.')) {
+                        mobileUrl = mobileUrl.replace('://', '://m.');
+                    }
+                    parent.hyperspaceBrowser.navigate(mobileUrl);
+                }
+                
+                function searchAbout() {
+                    parent.hyperspaceBrowser.performWebSearch('${domain} information reviews alternative sites');
+                }
+                
+                function tryArchive() {
+                    const archiveUrl = 'https://web.archive.org/web/*/' + '${url}';
+                    window.open(archiveUrl, '_blank');
+                }
+                
+                function tryCustomProxy() {
+                    const customProxy = document.getElementById('customProxy').value;
+                    if (customProxy.trim()) {
+                        const proxiedUrl = customProxy + '${url}';
+                        parent.hyperspaceBrowser.navigate(proxiedUrl);
+                    }
+                }
+                
+                function newSearch() {
+                    const newTarget = document.getElementById('newTarget').value;
+                    if (newTarget.trim()) {
+                        parent.hyperspaceBrowser.navigate(newTarget);
+                    }
+                }
+            </script>
+        </body>
+        </html>`;
+
+        this.elements.contentFrame.srcdoc = fallbackHTML;
+    }
+
+    getProxyServiceName(proxyUrl) {
+        if (proxyUrl.includes('allorigins.win')) return 'AllOrigins';
+        if (proxyUrl.includes('corsproxy.io')) return 'CorsProxy';
+        if (proxyUrl.includes('cors-anywhere')) return 'CorsAnywhere';
+        if (proxyUrl.includes('thingproxy')) return 'ThingProxy';
+        return 'Unknown Proxy';
+    }
+
+    extractSearchQuery(url) {
+        const match = url.match(/[?&]q=([^&]*)/);
+        return match ? decodeURIComponent(match[1]) : '';
     }
 
     isSearchQuery(input) {
