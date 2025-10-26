@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>HYP3RSP4C3 Browser Test</title>
+</head>
+
+<body>
+    <h1>Testing HYP3RSP4C3 Browser</h1>
+    <div id="test-results"></div>
+
+    <script>
+        // Test function to check if browser loads without errors
+        function runTests() {
+            const results = [];
+
+            try {
+                // Test 1: Check if we can load the script
+                const script = document.createElement('script');
+                script.src = 'script.js';
+                script.onload = function() {
+                    console.log('✅ Script loaded successfully');
+
+                    // Test 2: Check if browser class is defined
+                    setTimeout(() => {
+                        if (typeof window.hyperspaceBrowser !== 'undefined') {
+                            console.log('✅ HyperSpaceBrowser initialized successfully');
+
+                            // Test 3: Check if key methods exist
+                            const methods = ['navigate', 'startProxyChain', 'testProxyConnection', 'logTerminal'];
+                            methods.forEach(method => {
+                                if (typeof window.hyperspaceBrowser[method] === 'function') {
+                                    console.log(`✅ Method ${method} exists`);
+                                } else {
+                                    console.log(`❌ Method ${method} missing`);
+                                }
+                            });
+
+                            // Test 4: Check if elements are found
+                            const browser = window.hyperspaceBrowser;
+                            if (browser.elements) {
+                                console.log('✅ Elements object exists');
+                            } else {
+                                console.log('❌ Elements object missing');
+                            }
+
+                        } else {
+                            console.log('❌ HyperSpaceBrowser not initialized');
+                        }
+                    }, 1000);
+                };
+
+                script.onerror = function() {
+                    console.log('❌ Script failed to load');
+                };
+
+                document.head.appendChild(script);
+
+            } catch (error) {
+                console.log('❌ Test failed:', error.message);
+            }
+        }
+
+        // Run tests when page loads
+        window.onload = runTests;
+    </script>
+</body>
+
+</html>

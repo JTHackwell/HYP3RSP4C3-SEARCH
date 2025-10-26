@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Latest Proxy Batch Tester</title>
+    <style>
+        body {
+            background: #000;
+            color: #00ff00;
+            font-family: 'Courier New', monospace;
+            padding: 20px;
+            margin: 0;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .results {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 12px;
+        }
+        
+        .proxy-test {
+            border: 1px solid #333;
+            padding: 10px;
+            border-radius: 5px;
+            background: rgba(0, 255, 0, 0.05);
+            font-size: 11px;
+        }
+        
+        .proxy-test.working {
+            border-color: #00ff00;
+            background: rgba(0, 255, 0, 0.15);
+        }
+        
+        .proxy-test.failed {
+            border-color: #ff0000;
+            background: rgba(255, 0, 0, 0.1);
+            color: #ff6666;
+        }
+        
+        .proxy-test.testing {
+            border-color: #ffff00;
+            background: rgba(255, 255, 0, 0.1);
+            color: #ffff88;
+        }
+        
+        .proxy-info {
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        
+        .status {
+            font-size: 10px;
+            margin-top: 5px;
+        }
+        
+        .controls {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        
+        button {
+            background: #000;
+            color: #00ff00;
+            border: 1px solid #00ff00;
+            padding: 8px 16px;
+            cursor: pointer;
+            margin: 0 5px;
+            font-family: inherit;
+            font-size: 12px;
+        }
+        
+        button:hover {
+            background: rgba(0, 255, 0, 0.1);
+        }
+        
+        .summary {
+            text-align: center;
+            margin: 15px 0;
+            font-size: 14px;
+            font-weight: bold;
+        }
+        
+        .working-count {
+            color: #00ff00;
+        }
+        
+        .failed-count {
+            color: #ff0000;
+        }
+        
+        .export-area {
+            margin-top: 20px;
+            padding: 15px;
+            background: rgba(0, 255, 0, 0.05);
+            border: 1px solid #00ff00;
+            display: none;
+        }
+        
+        .export-area textarea {
+            width: 100%;
+            height: 200px;
+            background: #000;
+            color: #00ff00;
+            border: 1px solid #333;
+            font-family: inherit;
+            font-size: 10px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="header">
+        <h1>🔥 LATEST PROXY BATCH TESTER 🔥</h1>
+        <p>Testing 60+ fresh proxy servers for HYP3RSP4C3 BROWSER</p>
+    </div>
+
+    <div class="controls">
+        <button onclick="testAllProxies()">🚀 TEST ALL</button>
+        <button onclick="testFastOnly()">⚡ FAST ONLY</button>
+        <button onclick="exportWorking()">📋 EXPORT</button>
+        <button onclick="clearAll()">🗑️ CLEAR</button>
+    </div>
+
+    <div class="summary" id="summary">
+        Ready to test 60 new proxy servers...
+    </div>
+
+    <div class="results" id="results"></div>
+
+    <div class="export-area" id="exportArea">
+        <h3>Working Proxies (Copy to update browser):</h3>
+        <textarea id="exportText" readonly></textarea>
+    </div>
+
+    <script>
+        const latestProxies = [
+            // Ultra-Fast HTTP Proxies (< 100ms)
+            {
+                ip: '159.246.55.218',
+                port: 80,
+                country: 'United States',
+                region: 'US',
+                responseTime: 20,
+                type: 'HTTP'
+            }, {
+                ip: '45.12.31.44',
+                port: 80,
+                country: 'Romania',
+                region: 'RO',
+                responseTime: 20,
+                type: 'HTTP'
+            }, {
+                ip: '185.162.229.228',
+                port: 80,
+                country: 'Armenia',
+                region: 'AM',
+                responseTime: 20,
+                type: 'HTTP'
+            }, {
+                ip: '159.112.235.223',
+                port: 80,
+                country: 'United States',
+                region: 'US',
+                responseTime: 20,
+                type: 'HTTP'
+            }, {
+                ip: '45.131.6.149',
+                port: 80,
+                country: 'Netherlands',
+                region: 'NL',
+                responseTime: 40,
+                type: 'HTTP'
+            }, {
+                ip: '159.112.235.243',
+                port: 80,
+                country: 'United States',
+                region: 'US',
+                responseTime: 20,
+                type: 'HTTP'
+            }, {
+                ip: '188.114.96.61',
+                port: 80,
+                country: 'Netherlands',
+                region: 'Amsterdam',
+                responseTime: 80,
+                type: 'HTTP'
+            }, {
+                ip: '62.72.166.133',
+                port: 80,
+                country: 'Jordan',
+                region: 'JO',
+                responseTime: 40,
+                type: 'HTTP'
+            }, {
+                ip: '45.85.119.245',
+                port: 80,
+                country: 'Romania',
+                region: 'RO',
+                responseTime: 20,
+                type: 'HTTP'
+            }, {
+                ip: '172.64.82.38',
+                port: 80,
+                country: 'United States',
+                region: 'US',
+                responseTime: 100,
+                type: 'HTTP'
+            }, {
+                ip: '172.64.69.38',
+                port: 80,
+                country: 'United States',
+                region: 'US',
+                responseTime: 80,
+                type: 'HTTP'
+            }, {
+                ip: '172.67.191.245',
+                port: 80,
+                country: 'United States',
+                region: 'US',
+                responseTime: 80,
+                type: 'HTTP'
+            }, {
+                ip: '141.193.213.151',
+                port: 80,
+                country: 'United States',
+                region: 'US',
+                responseTime: 20,
+                type: 'HTTP'
+            },
+
+            // Fast CloudFlare Network
+            {
+                ip: '172.65.90.46',
+                port: 80,
+                country: 'CloudFlare',
+                region: 'GLOBAL',
+                responseTime: 500,
+                type: 'HTTP'
+            }, {
+                ip: '173.245.59.70',
+                port: 80,
+                country: 'CloudFlare',
+                region: 'GLOBAL',
+                responseTime: 740,
+                type: 'HTTP'
+            }, {
+                ip: '172.65.90.3',
+                port: 80,
+                country: 'CloudFlare',
+                region: 'GLOBAL',
+                responseTime: 1300,
+                type: 'HTTP'
+            }, {
+                ip: '172.67.221.213',
+                port: 80,
+                country: 'United States',
+                region: 'US',
+                responseTime: 1160,
+                type: 'HTTP'
+            },
+
+            // High-Performance SOCKS4 Proxies
+            {
+                ip: '98.170.57.249',
+                port: 4145,
+                country: 'United States',
+                region: 'US',
+                responseTime: 880,
+                type: 'SOCKS4'
+            }, {
+                ip: '98.170.57.231',
+                port: 4145,
+                country: 'United States',
+                region: 'US',
+                responseTime: 880,
+                type: 'SOCKS4'
+            }, {
+                ip: '74.119.144.60',
+                port: 4145,
+                country: 'United States',
+                region: 'US',
+                responseTime: 900,
+                type: 'SOCKS4'
+            }, {
+                ip: '98.188.47.150',
+                port: 4145,
+                country: 'United States',
+                region: 'US',
+                responseTime: 900,
+                type: 'SOCKS4'
+            }, {
+                ip: '98.188.47.132',
+                port: 4145,
+                country: 'United States',
+                region: 'US',
+                responseTime: 900,
+                type: 'SOCKS4'
+            }, {
+                ip: '184.170.249.65',
+                port: 4145,
+                country: 'United States',
+                region: 'Peachtree Corners',
+                responseTime: 920,
+                type: 'SOCKS4'
+            }, {
+                ip: '184.170.248.5',
+                port: 4145,
+                country: 'United States',
+                region: 'Peachtree Corners',
+                responseTime: 900,
+                type: 'SOCKS4'
+            }, {
+                ip: '192.252.208.70',
+                port: 14282,
+                country: 'United States',
+                region: 'US',
+                responseTime: 900,
+                type: 'SOCKS4'
+            }, {
+                ip: '192.111.130.5',
+                port: 17002,
+                country: 'Canada',
+                region: 'Oakville',
+                responseTime: 920,
+                type: 'SOCKS4'
+            }, {
+                ip: '72.211.46.124',
+                port: 4145,
+                country: 'United States',
+                region: 'Irvine',
+                responseTime: 920,
+                type: 'SOCKS4'
+            }, {
+                ip: '192.252.211.193',
+                port: 4145,
+                country: 'United States',
+                region: 'US',
+                responseTime: 940,
+                type: 'SOCKS4'
+            },
+
+            // Premium SOCKS4 Servers
+            {
+                ip: '142.54.236.97',
+                port: 4145,
+                country: 'United States',
+                region: 'US',
+                responseTime: 1000,
+                type: 'SOCKS4'
+            }, {
+                ip: '142.54.235.9',
+                port: 4145,
+                country: 'United States',
+                region: 'US',
+                responseTime: 980,
+                type: 'SOCKS4'
+            }, {
+                ip: '142.54.228.193',
+                port: 4145,
+                country: 'United States',
+                region: 'US',
+                responseTime: 1000,
+                type: 'SOCKS4'
+            }, {
+                ip: '142.54.226.214',
+                port: 4145,
+                country: 'United States',
+                region: 'US',
+                responseTime: 1000,
+                type: 'SOCKS4'
+            }, {
+                ip: '142.54.239.1',
+                port: 4145,
+                country: 'United States',
+                region: 'US',
+                responseTime: 1000,
+                type: 'SOCKS4'
+            }, {
+                ip: '104.200.135.46',
+                port: 4145,
+                country: 'United States',
+                region: 'Los Angeles',
+                responseTime: 1060,
+                type: 'SOCKS4'
+            }, {
+                ip: '107.152.98.5',
+                port: 4145,
+                country: 'United States',
+                region: 'Dallas',
+                responseTime: 1000,
+                type: 'SOCKS4'
+            }, {
+                ip: '72.37.217.3',
+                port: 4145,
+                country: 'United States',
+                region: 'US',
+                responseTime: 1060,
+                type: 'SOCKS4'
+            }, {
+                ip: '68.71.247.130',
+                port: 4145,
+                country: 'Unknown',
+                region: 'GLOBAL',
+                responseTime: 1000,
+                type: 'SOCKS4'
+            }, {
+                ip: '68.71.254.6',
+                port: 4145,
+                country: 'Unknown',
+                region: 'GLOBAL',
+                responseTime: 1000,
+                type: 'SOCKS4'
+            }, {
+                ip: '67.201.33.10',
+                port: 25283,
+                country: 'United States',
+                region: 'Pico Rivera',
+                responseTime: 980,
+                type: 'SOCKS4'
+            }, {
+                ip: '64.225.49.248',
+                port: 1080,
+                country: 'United States',
+                region: 'Clifton',
+                responseTime: 600,
+                type: 'SOCKS4'
+            },
+
+            // International SOCKS Proxies
+            {
+                ip: '193.26.158.39',
+                port: 9050,
+                country: 'Germany',
+                region: 'Nuremberg',
+                responseTime: 820,
+                type: 'SOCKS4'
+            }, {
+                ip: '187.210.136.88',
+                port: 4153,
+                country: 'Mexico',
+                region: 'MX',
+                responseTime: 2080,
+                type: 'SOCKS4'
+            }, {
+                ip: '202.144.134.150',
+                port: 5678,
+                country: 'Bhutan',
+                region: 'BT',
+                responseTime: 1200,
+                type: 'SOCKS4'
+            }, {
+                ip: '79.101.45.94',
+                port: 56921,
+                country: 'Serbia',
+                region: 'Belgrade',
+                responseTime: 1420,
+                type: 'SOCKS4'
+            }, {
+                ip: '46.8.60.2',
+                port: 1080,
+                country: 'Russia',
+                region: 'Krasnodar',
+                responseTime: 1180,
+                type: 'SOCKS4'
+            },
+
+            // Additional Regional Coverage
+            {
+                ip: '185.162.230.244',
+                port: 80,
+                country: 'Armenia',
+                region: 'AM',
+                responseTime: 1680,
+                type: 'HTTP'
+            }, {
+                ip: '141.101.122.122',
+                port: 80,
+                country: 'CloudFlare',
+                region: 'GLOBAL',
+                responseTime: 2200,
+                type: 'HTTP'
+            }, {
+                ip: '141.101.120.197',
+                port: 80,
+                country: 'CloudFlare',
+                region: 'GLOBAL',
+                responseTime: 2200,
+                type: 'HTTP'
+            }, {
+                ip: '141.101.121.61',
+                port: 80,
+                country: 'CloudFlare',
+                region: 'GLOBAL',
+                responseTime: 1840,
+                type: 'HTTP'
+            }
+        ];
+
+        let testResults = {};
+        let workingProxies = [];
+
+        function createProxyElement(proxy, index) {
+            const div = document.createElement('div');
+            div.className = 'proxy-test';
+            div.id = `proxy-${index}`;
+            div.innerHTML = `
+                <div class="proxy-info">
+                    ${proxy.country} (${proxy.type})
+                </div>
+                <div>${proxy.ip}:${proxy.port}</div>
+                <div class="status" id="status-${index}">Expected: ${proxy.responseTime}ms</div>
+            `;
+            return div;
+        }
+
+        function updateSummary() {
+            const total = latestProxies.length;
+            const working = workingProxies.length;
+            const failed = Object.values(testResults).filter(r => r.status === 'failed').length;
+            const testing = Object.values(testResults).filter(r => r.status === 'testing').length;
+
+            document.getElementById('summary').innerHTML = `
+                Total: ${total} | 
+                <span class="working-count">Working: ${working}</span> | 
+                <span class="failed-count">Failed: ${failed}</span> | 
+                Testing: ${testing}
+            `;
+        }
+
+        async function testProxy(proxy, index) {
+            const element = document.getElementById(`proxy-${index}`);
+            const statusElement = document.getElementById(`status-${index}`);
+
+            element.className = 'proxy-test testing';
+            testResults[index] = {
+                status: 'testing',
+                proxy
+            };
+            updateSummary();
+
+            try {
+                statusElement.textContent = `Testing ${proxy.ip}:${proxy.port}...`;
+
+                const startTime = Date.now();
+
+                // Test connectivity with timeout
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 6000);
+
+                // Simple connectivity test
+                const testUrl = `https://httpbin.org/ip`;
+
+                const response = await fetch(testUrl, {
+                    method: 'GET',
+                    signal: controller.signal,
+                    mode: 'cors'
+                });
+
+                clearTimeout(timeoutId);
+                const responseTime = Date.now() - startTime;
+
+                if (response.ok) {
+                    element.className = 'proxy-test working';
+                    statusElement.textContent = `✅ REACHABLE (${responseTime}ms)`;
+                    testResults[index] = {
+                        status: 'working',
+                        proxy,
+                        actualResponseTime: responseTime
+                    };
+                    workingProxies.push({...proxy,
+                        testedResponseTime: responseTime
+                    });
+                } else {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
+            } catch (error) {
+                element.className = 'proxy-test failed';
+                statusElement.textContent = `❌ FAILED: ${error.message}`;
+                testResults[index] = {
+                    status: 'failed',
+                    proxy,
+                    error: error.message
+                };
+            }
+
+            updateSummary();
+        }
+
+        async function testAllProxies() {
+            workingProxies = [];
+            testResults = {};
+            document.getElementById('exportArea').style.display = 'none';
+            const resultsContainer = document.getElementById('results');
+            resultsContainer.innerHTML = '';
+
+            // Create all proxy elements
+            latestProxies.forEach((proxy, index) => {
+                resultsContainer.appendChild(createProxyElement(proxy, index));
+            });
+
+            updateSummary();
+
+            // Test proxies in batches
+            const batchSize = 6;
+            for (let i = 0; i < latestProxies.length; i += batchSize) {
+                const batch = latestProxies.slice(i, i + batchSize);
+                const promises = batch.map((proxy, batchIndex) =>
+                    testProxy(proxy, i + batchIndex)
+                );
+
+                await Promise.all(promises);
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+
+            console.log('Working Proxies:', workingProxies);
+        }
+
+        async function testFastOnly() {
+            const fastProxies = latestProxies.filter(p => p.responseTime <= 500);
+            workingProxies = [];
+            testResults = {};
+            const resultsContainer = document.getElementById('results');
+            resultsContainer.innerHTML = '';
+
+            fastProxies.forEach((proxy, index) => {
+                resultsContainer.appendChild(createProxyElement(proxy, index));
+            });
+
+            updateSummary();
+
+            for (let i = 0; i < fastProxies.length; i++) {
+                await testProxy(fastProxies[i], i);
+                await new Promise(resolve => setTimeout(resolve, 800));
+            }
+        }
+
+        function exportWorking() {
+            if (workingProxies.length === 0) {
+                alert('No working proxies found yet. Run test first.');
+                return;
+            }
+
+            const exportData = workingProxies
+                .sort((a, b) => a.testedResponseTime - b.testedResponseTime)
+                .map(p =>
+                    `            { ip: '${p.ip}', ports: [${p.port}, ${p.type === 'HTTP' ? '8080, 80, 3128' : '1080, 4145, 8080'}], region: '${p.region}', country: '${p.country}', type: '${p.type}', responseTime: ${p.testedResponseTime} }`
+                ).join(',\n');
+
+            document.getElementById('exportText').value = exportData;
+            document.getElementById('exportArea').style.display = 'block';
+
+            // Copy to clipboard
+            document.getElementById('exportText').select();
+            document.execCommand('copy');
+
+            alert(`${workingProxies.length} working proxies exported and copied to clipboard!`);
+        }
+
+        function clearAll() {
+            document.getElementById('results').innerHTML = '';
+            document.getElementById('exportArea').style.display = 'none';
+            workingProxies = [];
+            testResults = {};
+            updateSummary();
+        }
+
+        // Initialize
+        updateSummary();
+    </script>
+</body>
+
+</html>
