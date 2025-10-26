@@ -369,8 +369,8 @@ class HyperSpaceBrowser {
         iframe.onerror = () => {
             if (!loaded) {
                 loaded = true;
-                this.logTerminal(`[DIRECT] Direct access failed, trying proxy services...`);
-                this.tryProxyServices(url);
+                this.logTerminal(`[DIRECT] Direct access failed, trying IP proxy servers...`);
+                this.tryIPProxiesFirst(url);
             }
         };
 
@@ -378,81 +378,372 @@ class HyperSpaceBrowser {
         setTimeout(() => {
             if (!loaded) {
                 loaded = true;
-                this.logTerminal(`[TIMEOUT] Direct access timeout, trying proxy services...`);
-                this.tryProxyServices(url);
+                this.logTerminal(`[TIMEOUT] Direct access timeout, trying IP proxy servers...`);
+                this.tryIPProxiesFirst(url);
             }
         }, 5000);
     }
 
+    async tryIPProxiesFirst(url) {
+        this.logTerminal(`[IP-PROXY] Attempting direct IP proxy connections before web proxies...`);
+        
+        try {
+            const ipProxySuccess = await this.testDirectIPProxies(url);
+            
+            if (!ipProxySuccess) {
+                this.logTerminal(`[IP-PROXY] Direct IP proxies failed, falling back to web proxy services...`);
+                this.tryProxyServices(url);
+            }
+        } catch (error) {
+            this.logTerminal(`[IP-PROXY] IP proxy test failed: ${error.message}`);
+            this.tryProxyServices(url);
+        }
+    }
+
     tryProxyServices(url) {
-        const proxyServices = [{
-                name: 'AllOrigins',
+        // Modern proxy services with direct IP proxies and web-based fallbacks
+        const proxyServices = [
+            // Direct IP Proxy Servers (High Priority)
+            {
+                name: 'DirectProxy-EU',
+                url: `http://195.114.209.50:8080/${url}`,
+                type: 'iframe',
+                timeout: 6000,
+                isDirectIP: true
+            },
+            {
+                name: 'DirectProxy-US',
+                url: `http://198.44.255.3:8080/${url}`,
+                type: 'iframe',
+                timeout: 6000,
+                isDirectIP: true
+            },
+            {
+                name: 'DirectProxy-DE',
+                url: `http://85.39.112.144:8080/${url}`,
+                type: 'iframe',
+                timeout: 6000,
+                isDirectIP: true
+            },
+            // SOCKS5 Proxy Alternatives (Try different ports)
+            {
+                name: 'SOCKS-EU-1080',
+                url: `http://195.114.209.50:1080/${url}`,
+                type: 'iframe',
+                timeout: 8000,
+                isDirectIP: true
+            },
+            {
+                name: 'SOCKS-US-1080',
+                url: `http://198.44.255.3:1080/${url}`,
+                type: 'iframe',
+                timeout: 8000,
+                isDirectIP: true
+            },
+            {
+                name: 'SOCKS-DE-1080',
+                url: `http://85.39.112.144:1080/${url}`,
+                type: 'iframe',
+                timeout: 8000,
+                isDirectIP: true
+            },
+            // Web-based Proxy Services (Fallback)
+            {
+                name: 'AllOrigins-Raw',
+                url: `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+                type: 'iframe',
+                timeout: 8000,
+                isDirectIP: false
+            },
+            {
+                name: 'AllOrigins-JSON',
                 url: `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
-                type: 'json'
+                type: 'json',
+                timeout: 8000,
+                isDirectIP: false
             },
             {
-                name: 'CorsProxy',
+                name: 'CorsProxy-IO',
                 url: `https://corsproxy.io/?${encodeURIComponent(url)}`,
-                type: 'html'
+                type: 'iframe',
+                timeout: 10000,
+                isDirectIP: false
             },
             {
-                name: 'ThingProxy',
-                url: `https://thingproxy.freeboard.io/fetch/${url}`,
-                type: 'html'
+                name: 'Proxy-Cors',
+                url: `https://proxy.cors.sh/${url}`,
+                type: 'iframe',
+                timeout: 10000,
+                isDirectIP: false
+            },
+            {
+                name: 'CorsAnywhere-Heroku',
+                url: `https://cors-anywhere.herokuapp.com/${url}`,
+                type: 'iframe',
+                timeout: 12000,
+                isDirectIP: false
             }
         ];
 
-        this.logTerminal(`[PROXY] Testing ${proxyServices.length} proxy services...`);
+        this.logTerminal(`[PROXY] Initializing advanced proxy chain (${proxyServices.length} services)...`);
 
-        let proxyIndex = 0;
+        let currentProxyIndex = 0;
+        let attemptCount = 0;
+        const maxAttempts = proxyServices.length * 2; // Allow retry attempts
 
-        const tryNextProxy = () => {
-            if (proxyIndex >= proxyServices.length) {
-                this.logTerminal(`[ERROR] All proxy methods failed`);
-                this.showAlternativeAccess(url);
+        const attemptProxy = async() => {
+            if (attemptCount >= maxAttempts) {
+                this.logTerminal(`[PROXY] All proxy methods exhausted after ${attemptCount} attempts`);
+                this.showWorkingAlternatives(url);
                 return;
             }
 
-            const proxy = proxyServices[proxyIndex];
-            this.logTerminal(`[PROXY] Trying ${proxy.name} (${proxyIndex + 1}/${proxyServices.length})...`);
+            const proxy = proxyServices[currentProxyIndex];
+            attemptCount++;
 
-            fetch(proxy.url, {
-                    method: 'GET',
-                    headers: {
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
-                    }
-                })
-                .then(response => {
-                    if (response.ok) {
-                        this.logTerminal(`[SUCCESS] ${proxy.name} responded successfully`);
-                        return response.text();
+            this.logTerminal(`[PROXY] Attempt ${attemptCount}: Testing ${proxy.name}...`);
+            this.logTerminal(`[DEBUG] Proxy URL: ${proxy.url}`);
+
+            try {
+                // Create AbortController for timeout
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), proxy.timeout);
+
+                if (proxy.type === 'iframe') {
+                    // Try loading directly in iframe first (fastest method)
+                    const success = await this.tryIframeProxy(proxy.url, proxy.timeout);
+                    clearTimeout(timeoutId);
+
+                    if (success) {
+                        this.logTerminal(`[SUCCESS] ${proxy.name} iframe loading successful`);
+                        return;
                     } else {
-                        throw new Error(`HTTP ${response.status}`);
+                        throw new Error('Iframe loading failed');
                     }
-                })
-                .then(html => {
-                    // Handle different proxy response types
-                    if (proxy.type === 'json' && proxy.name === 'AllOrigins') {
-                        try {
-                            const data = JSON.parse(html);
-                            html = data.contents || html;
-                        } catch (e) {
-                            // If parsing fails, use raw response
+                } else if (proxy.type === 'json') {
+                    // Fetch and parse JSON response
+                    const response = await fetch(proxy.url, {
+                        method: 'GET',
+                        signal: controller.signal,
+                        headers: {
+                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                            'Accept': '*/*',
+                            'Cache-Control': 'no-cache',
+                            'Pragma': 'no-cache'
                         }
+                    });
+
+                    clearTimeout(timeoutId);
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                     }
 
-                    this.displayProxiedContent(html, url);
-                    this.hideLoading();
-                })
-                .catch(error => {
-                    this.logTerminal(`[PROXY] ${proxy.name} failed: ${error.message}`);
-                    proxyIndex++;
-                    setTimeout(tryNextProxy, 1000);
-                });
+                    const jsonData = await response.json();
+
+                    if (jsonData && jsonData.contents) {
+                        this.logTerminal(`[SUCCESS] ${proxy.name} JSON response received`);
+                        this.displayProxiedContent(jsonData.contents, url);
+                        this.hideLoading();
+                        return;
+                    } else {
+                        throw new Error('Invalid JSON response structure');
+                    }
+                }
+
+            } catch (error) {
+                this.logTerminal(`[FAILED] ${proxy.name}: ${error.message}`);
+
+                // Move to next proxy
+                currentProxyIndex = (currentProxyIndex + 1) % proxyServices.length;
+
+                // Add delay before retry
+                setTimeout(attemptProxy, 1500);
+            }
         };
 
-        tryNextProxy();
+        attemptProxy();
+    }
+
+    async tryIframeProxy(proxyUrl, timeout = 8000) {
+        return new Promise((resolve) => {
+            const iframe = this.elements.contentFrame;
+            if (!iframe) {
+                resolve(false);
+                return;
+            }
+
+            let resolved = false;
+            const timeoutId = setTimeout(() => {
+                if (!resolved) {
+                    resolved = true;
+                    resolve(false);
+                }
+            }, timeout);
+
+            // Set up success handler
+            const handleLoad = () => {
+                if (!resolved) {
+                    resolved = true;
+                    clearTimeout(timeoutId);
+
+                    // Hide welcome screen
+                    if (this.elements.welcomeScreen) {
+                        this.elements.welcomeScreen.style.display = 'none';
+                    }
+                    iframe.style.display = 'block';
+                    this.hideLoading();
+
+                    resolve(true);
+                }
+            };
+
+            // Set up error handler
+            const handleError = () => {
+                if (!resolved) {
+                    resolved = true;
+                    clearTimeout(timeoutId);
+                    resolve(false);
+                }
+            };
+
+            // Attach event listeners
+            iframe.onload = handleLoad;
+            iframe.onerror = handleError;
+
+            // Start loading
+            try {
+                iframe.src = proxyUrl;
+            } catch (error) {
+                handleError();
+            }
+        });
+    }
+
+    // Enhanced method for testing and using the provided IP-based proxies
+    testDirectIPProxies(url) {
+        this.logTerminal(`[IP-PROXY] Testing direct IP proxy servers...`);
+
+        const directProxies = [
+            { ip: '195.114.209.50', ports: [8080, 3128, 1080, 9050, 9150], region: 'EU' },
+            { ip: '198.44.255.3', ports: [8080, 3128, 1080, 9050, 9150], region: 'US' }, 
+            { ip: '85.39.112.144', ports: [8080, 3128, 1080, 9050, 9150], region: 'DE' }
+        ];
+
+        return new Promise((resolve) => {
+            let proxyIndex = 0;
+            let portIndex = 0;
+            let foundWorking = false;
+
+            const testNextProxy = async () => {
+                if (foundWorking) return;
+
+                if (proxyIndex >= directProxies.length) {
+                    this.logTerminal(`[IP-PROXY] All direct IP proxies tested, none responsive`);
+                    resolve(false);
+                    return;
+                }
+
+                const proxy = directProxies[proxyIndex];
+                
+                if (portIndex >= proxy.ports.length) {
+                    proxyIndex++;
+                    portIndex = 0;
+                    setTimeout(testNextProxy, 100);
+                    return;
+                }
+
+                const port = proxy.ports[portIndex];
+                const proxyUrl = `http://${proxy.ip}:${port}/${url}`;
+                
+                this.logTerminal(`[IP-PROXY] Testing ${proxy.region} proxy ${proxy.ip}:${port}...`);
+
+                try {
+                    const success = await this.testIPProxyConnection(proxyUrl, 3000);
+                    
+                    if (success && !foundWorking) {
+                        foundWorking = true;
+                        this.logTerminal(`[SUCCESS] Direct IP proxy working: ${proxy.ip}:${port} (${proxy.region})`);
+                        resolve(true);
+                        return;
+                    }
+                } catch (error) {
+                    this.logTerminal(`[IP-PROXY] Failed ${proxy.ip}:${port} - ${error.message}`);
+                }
+
+                portIndex++;
+                setTimeout(testNextProxy, 200); // Small delay between tests
+            };
+
+            testNextProxy();
+        });
+    }
+
+    async testIPProxyConnection(proxyUrl, timeout = 3000) {
+        return new Promise((resolve) => {
+            const iframe = this.elements.contentFrame;
+            if (!iframe) {
+                resolve(false);
+                return;
+            }
+
+            let resolved = false;
+            const timeoutId = setTimeout(() => {
+                if (!resolved) {
+                    resolved = true;
+                    resolve(false);
+                }
+            }, timeout);
+
+            const handleLoad = () => {
+                if (!resolved) {
+                    resolved = true;
+                    clearTimeout(timeoutId);
+                    
+                    // Check if content actually loaded
+                    try {
+                        if (iframe.contentWindow && iframe.contentDocument) {
+                            // Show content and mark success
+                            if (this.elements.welcomeScreen) {
+                                this.elements.welcomeScreen.style.display = 'none';
+                            }
+                            iframe.style.display = 'block';
+                            this.hideLoading();
+                            resolve(true);
+                        } else {
+                            resolve(false);
+                        }
+                    } catch (e) {
+                        // Cross-origin restrictions might prevent access, but loading succeeded
+                        if (this.elements.welcomeScreen) {
+                            this.elements.welcomeScreen.style.display = 'none';
+                        }
+                        iframe.style.display = 'block';
+                        this.hideLoading();
+                        resolve(true);
+                    }
+                }
+            };
+
+            const handleError = () => {
+                if (!resolved) {
+                    resolved = true;
+                    clearTimeout(timeoutId);
+                    resolve(false);
+                }
+            };
+
+            // Set up event handlers
+            iframe.onload = handleLoad;
+            iframe.onerror = handleError;
+
+            // Attempt to load
+            try {
+                iframe.src = proxyUrl;
+            } catch (error) {
+                handleError();
+            }
+        });
     }
 
     loadEmbeddedDuckDuckGo(query = '') {
@@ -678,8 +969,17 @@ class HyperSpaceBrowser {
         const currentUrl = urls[urlIndex];
         this.logTerminal(`[DDG] Trying DuckDuckGo URL ${urlIndex + 1}/${urls.length}: ${currentUrl}`);
 
-        // Try to load through our existing proxy system
+        // Try to load through enhanced proxy system including direct IP proxies
         const proxyServices = [
+            // Direct IP Proxies (Fastest)
+            `http://195.114.209.50:8080/${currentUrl}`,
+            `http://198.44.255.3:8080/${currentUrl}`,
+            `http://85.39.112.144:8080/${currentUrl}`,
+            // Alternative ports for IP proxies
+            `http://195.114.209.50:3128/${currentUrl}`,
+            `http://198.44.255.3:3128/${currentUrl}`,
+            `http://85.39.112.144:3128/${currentUrl}`,
+            // Web-based proxy fallbacks
             `https://api.allorigins.win/get?url=${encodeURIComponent(currentUrl)}`,
             `https://corsproxy.io/?${encodeURIComponent(currentUrl)}`,
         ];
@@ -1555,22 +1855,208 @@ class HyperSpaceBrowser {
     }
 
     displayProxiedContent(html, url) {
-        this.logTerminal(`[SUCCESS] Content loaded from ${url}`);
+        this.logTerminal(`[CONTENT] Processing proxied content from ${url}`);
 
-        // Create a safe iframe with the content
         const iframe = this.elements.contentFrame;
-        if (iframe) {
-            // Set the content directly
-            iframe.srcdoc = html;
+        if (!iframe) {
+            this.logTerminal(`[ERROR] Content frame not available`);
+            return;
+        }
+
+        try {
+            // Clean and process the HTML content
+            let processedHtml = this.processProxiedHTML(html, url);
+            
+            // Validate content is not empty
+            if (!processedHtml || processedHtml.trim().length < 50) {
+                this.logTerminal(`[WARNING] Received minimal content, may be blocked`);
+                // Try alternative display method
+                this.showContentPreview(html, url);
+                return;
+            }
+
+            // Set up iframe event handlers
             iframe.onload = () => {
-                this.logTerminal(`[RENDER] Page rendered successfully`);
+                this.logTerminal(`[SUCCESS] Content rendered: ${url}`);
+                this.updateAddressBar(url);
             };
 
-            // Show the frame and hide welcome screen
+            iframe.onerror = () => {
+                this.logTerminal(`[ERROR] Content rendering failed`);
+                this.showContentPreview(html, url);
+            };
+
+            // Load the content
+            iframe.srcdoc = processedHtml;
+            iframe.style.display = 'block';
+
+            // Hide welcome screen
             if (this.elements.welcomeScreen) {
                 this.elements.welcomeScreen.style.display = 'none';
             }
-            iframe.style.display = 'block';
+
+            this.logTerminal(`[RENDER] Content display initiated`);
+            
+        } catch (error) {
+            this.logTerminal(`[ERROR] Content processing failed: ${error.message}`);
+            this.showContentPreview(html, url);
+        }
+    }
+
+    processProxiedHTML(html, originalUrl) {
+        if (!html) return html;
+
+        try {
+            // Fix relative URLs and improve content
+            let processed = html;
+
+            // Extract domain from original URL
+            const urlObj = new URL(originalUrl);
+            const baseUrl = `${urlObj.protocol}//${urlObj.host}`;
+
+            // Fix relative links and resources
+            processed = processed.replace(/href=["']\/([^"']*?)["']/g, `href="${baseUrl}/$1"`);
+            processed = processed.replace(/src=["']\/([^"']*?)["']/g, `src="${baseUrl}/$1"`);
+            
+            // Add base tag for better resource loading
+            if (processed.includes('<head>')) {
+                processed = processed.replace('<head>', `<head><base href="${baseUrl}/">`);
+            }
+
+            // Inject proxy notification
+            const proxyNotice = `
+                <style>
+                    .hyper-proxy-notice {
+                        position: fixed;
+                        top: 0;
+                        left: 0;
+                        right: 0;
+                        background: linear-gradient(135deg, #8b5dff, #00ffff);
+                        color: #000;
+                        padding: 8px;
+                        text-align: center;
+                        font-family: monospace;
+                        font-weight: bold;
+                        z-index: 999999;
+                        font-size: 12px;
+                    }
+                    body { margin-top: 35px !important; }
+                </style>
+                <div class="hyper-proxy-notice">
+                    ⚡ HYP3RSP4C3 PROXY ACTIVE • ANONYMOUS BROWSING • IP MASKED ⚡
+                </div>
+            `;
+
+            if (processed.includes('<body>')) {
+                processed = processed.replace('<body>', `<body>${proxyNotice}`);
+            } else {
+                processed = proxyNotice + processed;
+            }
+
+            return processed;
+
+        } catch (error) {
+            this.logTerminal(`[WARNING] HTML processing failed, using raw content: ${error.message}`);
+            return html;
+        }
+    }
+
+    showContentPreview(html, url) {
+        this.logTerminal(`[PREVIEW] Showing content preview for ${url}`);
+
+        // Create a simple content preview when main display fails
+        const previewHtml = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Content Preview - HYP3RSP4C3</title>
+            <style>
+                body { 
+                    background: linear-gradient(135deg, #0a0a0a, #1a1a1a);
+                    color: #00ff41; 
+                    font-family: 'Source Code Pro', monospace; 
+                    padding: 20px;
+                    line-height: 1.6;
+                }
+                .preview-container {
+                    max-width: 900px;
+                    margin: 0 auto;
+                }
+                .preview-header {
+                    text-align: center;
+                    border-bottom: 2px solid #8b5dff;
+                    padding-bottom: 20px;
+                    margin-bottom: 30px;
+                }
+                .content-box {
+                    background: rgba(26, 26, 26, 0.8);
+                    border: 1px solid #00ffff;
+                    border-radius: 8px;
+                    padding: 20px;
+                    margin: 20px 0;
+                    max-height: 400px;
+                    overflow-y: auto;
+                    white-space: pre-wrap;
+                    word-wrap: break-word;
+                }
+                .action-buttons {
+                    text-align: center;
+                    margin-top: 30px;
+                }
+                .action-btn {
+                    background: linear-gradient(135deg, #8b5dff, #00ffff);
+                    color: #000;
+                    border: none;
+                    padding: 12px 20px;
+                    margin: 5px;
+                    border-radius: 6px;
+                    font-weight: bold;
+                    cursor: pointer;
+                    font-family: 'Source Code Pro', monospace;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="preview-container">
+                <div class="preview-header">
+                    <h1>🔍 CONTENT PREVIEW</h1>
+                    <p>Source: ${url}</p>
+                    <p>Content received but may be blocked from full display</p>
+                </div>
+                
+                <div class="content-box">
+                    ${html ? html.substring(0, 2000) + (html.length > 2000 ? '\n\n[Content truncated...]' : '') : 'No content received'}
+                </div>
+                
+                <div class="action-buttons">
+                    <button class="action-btn" onclick="openInNewTab()">Open in New Tab</button>
+                    <button class="action-btn" onclick="retryProxy()">Retry Proxy</button>
+                    <button class="action-btn" onclick="showAlternatives()">Show Alternatives</button>
+                </div>
+            </div>
+            
+            <script>
+                function openInNewTab() {
+                    window.open('${url}', '_blank');
+                }
+                
+                function retryProxy() {
+                    parent.hyperspaceBrowser.navigate('${url}');
+                }
+                
+                function showAlternatives() {
+                    parent.hyperspaceBrowser.showWorkingAlternatives('${url}');
+                }
+            </script>
+        </body>
+        </html>`;
+
+        if (this.elements.contentFrame) {
+            this.elements.contentFrame.srcdoc = previewHtml;
+            this.elements.contentFrame.style.display = 'block';
+            if (this.elements.welcomeScreen) {
+                this.elements.welcomeScreen.style.display = 'none';
+            }
         }
     }
 
@@ -1631,8 +2117,249 @@ class HyperSpaceBrowser {
         this.hideLoading();
     }
 
+    showWorkingAlternatives(url) {
+        this.logTerminal(`[ALTERNATIVES] Displaying working proxy alternatives for ${url}`);
+
+        const domain = url.replace(/https?:\/\//, '').split('/')[0];
+
+        const alternativesHTML = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Proxy Alternatives - HYP3RSP4C3</title>
+            <style>
+                body { 
+                    background: linear-gradient(135deg, #0a0a0a, #1a1a1a);
+                    color: #00ff41; 
+                    font-family: 'Source Code Pro', monospace; 
+                    margin: 0; 
+                    padding: 20px;
+                    line-height: 1.6;
+                    min-height: 100vh;
+                }
+                .container { 
+                    max-width: 900px; 
+                    margin: 0 auto; 
+                }
+                .header { 
+                    text-align: center; 
+                    margin-bottom: 40px; 
+                    padding-bottom: 20px;
+                    border-bottom: 2px solid #8b5dff;
+                }
+                .logo {
+                    font-size: 28px;
+                    color: #8b5dff;
+                    margin-bottom: 15px;
+                }
+                .target-url {
+                    background: rgba(0, 0, 0, 0.8);
+                    border: 2px solid #ff6b6b;
+                    border-radius: 8px;
+                    padding: 15px;
+                    margin: 20px 0;
+                    word-break: break-all;
+                }
+                .alternatives-grid {
+                    display: grid;
+                    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+                    gap: 20px;
+                    margin-bottom: 30px;
+                }
+                .alt-card {
+                    background: rgba(26, 26, 26, 0.9);
+                    border: 2px solid #333;
+                    border-radius: 12px;
+                    padding: 25px;
+                    text-align: center;
+                    transition: all 0.3s ease;
+                }
+                .alt-card:hover {
+                    border-color: #00ffff;
+                    box-shadow: 0 0 20px rgba(0, 255, 255, 0.3);
+                    transform: translateY(-3px);
+                }
+                .alt-icon {
+                    font-size: 42px;
+                    margin-bottom: 15px;
+                    display: block;
+                }
+                .alt-title {
+                    color: #00ffff;
+                    font-size: 20px;
+                    font-weight: bold;
+                    margin-bottom: 12px;
+                }
+                .alt-desc {
+                    color: #00ff41;
+                    margin-bottom: 20px;
+                    font-size: 14px;
+                    line-height: 1.5;
+                }
+                .proxy-btn {
+                    background: linear-gradient(135deg, #8b5dff, #00ffff);
+                    color: #000;
+                    border: none;
+                    padding: 12px 20px;
+                    border-radius: 6px;
+                    font-weight: bold;
+                    cursor: pointer;
+                    margin: 5px;
+                    font-family: 'Source Code Pro', monospace;
+                    text-decoration: none;
+                    display: inline-block;
+                    transition: all 0.2s ease;
+                }
+                .proxy-btn:hover {
+                    background: linear-gradient(135deg, #00ffff, #8b5dff);
+                    transform: scale(1.05);
+                    box-shadow: 0 0 15px rgba(0, 255, 255, 0.5);
+                }
+                .retry-section {
+                    background: rgba(42, 42, 42, 0.8);
+                    border: 2px solid #ff6b6b;
+                    border-radius: 10px;
+                    padding: 25px;
+                    text-align: center;
+                    margin-top: 30px;
+                }
+                .retry-btn {
+                    background: linear-gradient(135deg, #ff6b6b, #ff8e8e);
+                    color: #000;
+                    border: none;
+                    padding: 12px 24px;
+                    border-radius: 6px;
+                    font-weight: bold;
+                    cursor: pointer;
+                    margin: 8px;
+                    font-family: 'Source Code Pro', monospace;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <div class="logo">⚡ HYP3RSP4C3 PROXY NETWORK ⚡</div>
+                    <h1>🚫 DIRECT ROUTING BLOCKED</h1>
+                    <div class="target-url">
+                        <strong>Target:</strong> ${url}
+                    </div>
+                    <p>All automated proxy routes have been blocked. Use manual alternatives below:</p>
+                </div>
+                
+                <div class="alternatives-grid">
+                    <div class="alt-card">
+                        <span class="alt-icon">🌐</span>
+                        <div class="alt-title">Web Proxy Sites</div>
+                        <div class="alt-desc">Paste the URL into these external proxy websites for immediate access</div>
+                        <a href="https://www.proxysite.com/browse/${encodeURIComponent(url)}" target="_blank" class="proxy-btn">ProxySite</a>
+                        <a href="https://hide.me/en/proxy/${encodeURIComponent(url)}" target="_blank" class="proxy-btn">Hide.me</a>
+                        <a href="https://www.hidemyass.com/en-us/proxy/${encodeURIComponent(url)}" target="_blank" class="proxy-btn">HideMyAss</a>
+                    </div>
+                    
+                    <div class="alt-card">
+                        <span class="alt-icon">🔗</span>
+                        <div class="alt-title">Archive Services</div>
+                        <div class="alt-desc">Access cached versions of the website through archive services</div>
+                        <a href="https://web.archive.org/web/*/${url}" target="_blank" class="proxy-btn">Wayback Machine</a>
+                        <a href="https://archive.today/?run=1&url=${encodeURIComponent(url)}" target="_blank" class="proxy-btn">Archive.today</a>
+                    </div>
+                    
+                    <div class="alt-card">
+                        <span class="alt-icon">🔒</span>
+                        <div class="alt-title">VPN + Direct Access</div>
+                        <div class="alt-desc">Use a VPN service and access the site directly in a new tab</div>
+                        <a href="${url}" target="_blank" class="proxy-btn">Open Direct</a>
+                        <button class="proxy-btn" onclick="copyToClipboard('${url}')">Copy URL</button>
+                    </div>
+                    
+                    <div class="alt-card">
+                        <span class="alt-icon">🦆</span>
+                        <div class="alt-title">Search Alternative</div>
+                        <div class="alt-desc">Search for the content using anonymous search engines</div>
+                        <a href="https://duckduckgo.com/?q=site:${domain}" target="_blank" class="proxy-btn">Search DDG</a>
+                        <a href="https://startpage.com/search?query=site:${domain}" target="_blank" class="proxy-btn">StartPage</a>
+                    </div>
+                    
+                    <div class="alt-card">
+                        <span class="alt-icon">🌍</span>
+                        <div class="alt-title">Tor Browser</div>
+                        <div class="alt-desc">Download and use Tor Browser for maximum anonymity</div>
+                        <a href="https://www.torproject.org/download/" target="_blank" class="proxy-btn">Get Tor</a>
+                        <button class="proxy-btn" onclick="enableTorMode()">Enable Tor Mode</button>
+                    </div>
+                    
+                    <div class="alt-card">
+                        <span class="alt-icon">📱</span>
+                        <div class="alt-title">Mobile Access</div>
+                        <div class="alt-desc">Try accessing through mobile-optimized versions</div>
+                        <a href="https://m.${domain}" target="_blank" class="proxy-btn">Mobile Site</a>
+                        <a href="https://lite.${domain}" target="_blank" class="proxy-btn">Lite Version</a>
+                    </div>
+                </div>
+                
+                <div class="retry-section">
+                    <h3>🔄 RETRY OPTIONS</h3>
+                    <p>Attempt connection again with different methods:</p>
+                    <button class="retry-btn" onclick="retryWithTor()">🧅 Retry with Tor</button>
+                    <button class="retry-btn" onclick="retryAdvanced()">🚀 Advanced Retry</button>
+                    <button class="retry-btn" onclick="goHome()">🏠 Return Home</button>
+                </div>
+            </div>
+            
+            <script>
+                function copyToClipboard(text) {
+                    navigator.clipboard.writeText(text).then(() => {
+                        parent.hyperspaceBrowser.logTerminal('[COPIED] URL copied to clipboard');
+                        alert('URL copied to clipboard!');
+                    });
+                }
+                
+                function enableTorMode() {
+                    parent.hyperspaceBrowser.preferTorRouting = true;
+                    parent.hyperspaceBrowser.logTerminal('[TOR] Tor routing enabled for future connections');
+                    alert('Tor routing enabled! Try navigating again.');
+                }
+                
+                function retryWithTor() {
+                    parent.hyperspaceBrowser.preferTorRouting = true;
+                    parent.hyperspaceBrowser.navigate('${url}');
+                }
+                
+                function retryAdvanced() {
+                    parent.hyperspaceBrowser.logTerminal('[RETRY] Attempting advanced proxy methods...');
+                    parent.hyperspaceBrowser.navigate('${url}');
+                }
+                
+                function goHome() {
+                    parent.hyperspaceBrowser.goHome();
+                }
+                
+                // Log successful load
+                parent.hyperspaceBrowser.logTerminal('[ALTERNATIVES] Proxy alternatives loaded successfully');
+            </script>
+        </body>
+        </html>`;
+
+        if (this.elements.contentFrame) {
+            this.elements.contentFrame.srcdoc = alternativesHTML;
+            this.elements.contentFrame.style.display = 'block';
+            if (this.elements.welcomeScreen) {
+                this.elements.welcomeScreen.style.display = 'none';
+            }
+        }
+
+        this.hideLoading();
+    }
+
     showAlternativeAccess(url) {
-        this.logTerminal(`[ALTERNATIVE] Showing alternative access methods for ${url}`);
+        // Legacy method - redirect to new implementation
+        this.showWorkingAlternatives(url);
+    }
+
+    // Legacy method kept for compatibility 
+    showLegacyAlternatives(url) {
+        this.logTerminal(`[LEGACY] Showing legacy alternative access methods for ${url}`);
 
         const domain = url.replace(/https?:\/\//, '').split('/')[0];
 
@@ -1817,9 +2544,21 @@ class HyperSpaceBrowser {
     async torProxyServices(url) {
         this.logTerminal(`[TOR] Attempting Tor-enabled proxy services...`);
 
-        // Use proxy services that specifically route through Tor
+        // Use enhanced proxy services including direct IP proxies for Tor routing
         const torProxies = [
-            // Tor-enabled CORS proxies
+            // Direct IP Proxies (Potentially Tor-enabled)
+            `http://195.114.209.50:9050/${url}`, // Tor SOCKS port on EU proxy
+            `http://198.44.255.3:9050/${url}`, // Tor SOCKS port on US proxy  
+            `http://85.39.112.144:9050/${url}`, // Tor SOCKS port on DE proxy
+            // Alternative Tor ports
+            `http://195.114.209.50:9150/${url}`, // Tor Browser port on EU proxy
+            `http://198.44.255.3:9150/${url}`, // Tor Browser port on US proxy
+            `http://85.39.112.144:9150/${url}`, // Tor Browser port on DE proxy
+            // Standard proxy ports (may be Tor-enabled)
+            `http://195.114.209.50:8080/${url}`,
+            `http://198.44.255.3:8080/${url}`,
+            `http://85.39.112.144:8080/${url}`,
+            // Web-based Tor-enabled proxies
             `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`, // May route through Tor
             `https://corsproxy.io/?${encodeURIComponent(url)}`, // Check if Tor-enabled
             // Custom Tor gateway (if available)
