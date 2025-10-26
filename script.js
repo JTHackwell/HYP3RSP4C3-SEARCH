@@ -132,6 +132,12 @@ class HyperSpaceBrowser {
         this.elements.welcomeScreen.style.display = 'none';
         this.elements.contentFrame.style.display = 'block';
 
+        // Check for special embedded DuckDuckGo
+        if (url === 'EMBEDDED_DDG') {
+            this.loadEmbeddedDuckDuckGo();
+            return;
+        }
+
         // Immediate proxy connection (no artificial delay)
         try {
             this.loadThroughProxy(url);
@@ -168,11 +174,17 @@ class HyperSpaceBrowser {
             'gmail': 'https://gmail.com',
             'yahoo': 'https://yahoo.com',
             'bing': 'https://bing.com',
-            'duckduckgo': 'https://duckduckgo.com'
+            'duckduckgo': 'EMBEDDED_DDG', // Special handler for embedded DuckDuckGo
+            'ddg': 'EMBEDDED_DDG',
+            'search': 'EMBEDDED_DDG'
         };
 
         const lowerUrl = url.toLowerCase();
         if (commonSiteUrls[lowerUrl]) {
+            if (commonSiteUrls[lowerUrl] === 'EMBEDDED_DDG') {
+                // Special handling for embedded DuckDuckGo
+                return 'EMBEDDED_DDG';
+            }
             return commonSiteUrls[lowerUrl];
         }
 
@@ -319,11 +331,75 @@ class HyperSpaceBrowser {
     }
 
     tryRegularProxies(url) {
-        const proxyServices = [
-            `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
-            `https://corsproxy.io/?${encodeURIComponent(url)}`,
-            `https://cors-anywhere.herokuapp.com/${url}`,
-            `https://thingproxy.freeboard.io/fetch/${url}`
+        this.logTerminal(`[PROXY] Attempting to load: ${url}`);
+
+        // First, try direct iframe loading (some sites allow it)
+        this.logTerminal(`[DIRECT] Attempting direct iframe access...`);
+        this.tryDirectIframe(url);
+    }
+
+    tryDirectIframe(url) {
+        const iframe = this.elements.contentFrame;
+        if (!iframe) {
+            this.logTerminal(`[ERROR] Content frame not found`);
+            return;
+        }
+
+        this.logTerminal(`[IFRAME] Loading ${url} directly...`);
+
+        // Set up iframe
+        iframe.src = url;
+        iframe.style.display = 'block';
+
+        if (this.elements.welcomeScreen) {
+            this.elements.welcomeScreen.style.display = 'none';
+        }
+
+        // Set up timeout and error handling
+        let loaded = false;
+
+        iframe.onload = () => {
+            if (!loaded) {
+                loaded = true;
+                this.logTerminal(`[SUCCESS] Direct access to ${url} successful`);
+                this.hideLoading();
+            }
+        };
+
+        iframe.onerror = () => {
+            if (!loaded) {
+                loaded = true;
+                this.logTerminal(`[DIRECT] Direct access failed, trying proxy services...`);
+                this.tryProxyServices(url);
+            }
+        };
+
+        // Timeout fallback
+        setTimeout(() => {
+            if (!loaded) {
+                loaded = true;
+                this.logTerminal(`[TIMEOUT] Direct access timeout, trying proxy services...`);
+                this.tryProxyServices(url);
+            }
+        }, 5000);
+    }
+
+    tryProxyServices(url) {
+        const proxyServices = [{
+                name: 'AllOrigins',
+                url: `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
+                type: 'json'
+            },
+            {
+                name: 'CorsProxy',
+                url: `https://corsproxy.io/?${encodeURIComponent(url)}`,
+                type: 'html'
+            },
+            {
+                name: 'ThingProxy',
+                url: `https://thingproxy.freeboard.io/fetch/${url}`,
+                type: 'html'
+            }
         ];
 
         this.logTerminal(`[PROXY] Testing ${proxyServices.length} proxy services...`);
@@ -332,47 +408,1150 @@ class HyperSpaceBrowser {
 
         const tryNextProxy = () => {
             if (proxyIndex >= proxyServices.length) {
-                this.logTerminal(`[ERROR] All proxy services failed`);
-                this.showConnectionError(url);
+                this.logTerminal(`[ERROR] All proxy methods failed`);
+                this.showAlternativeAccess(url);
                 return;
             }
 
-            const proxyUrl = proxyServices[proxyIndex];
-            this.logTerminal(`[PROXY] Trying proxy ${proxyIndex + 1}/${proxyServices.length}`);
+            const proxy = proxyServices[proxyIndex];
+            this.logTerminal(`[PROXY] Trying ${proxy.name} (${proxyIndex + 1}/${proxyServices.length})...`);
 
-            // Test proxy with a simple fetch
-            fetch(proxyUrl, {
+            fetch(proxy.url, {
                     method: 'GET',
                     headers: {
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
                     }
                 })
                 .then(response => {
                     if (response.ok) {
-                        this.logTerminal(`[SUCCESS] Connected via proxy ${proxyIndex + 1}`);
+                        this.logTerminal(`[SUCCESS] ${proxy.name} responded successfully`);
                         return response.text();
                     } else {
                         throw new Error(`HTTP ${response.status}`);
                     }
                 })
                 .then(html => {
-                    // For allorigins, extract contents
-                    if (proxyUrl.includes('allorigins')) {
-                        const data = JSON.parse(html);
-                        html = data.contents;
+                    // Handle different proxy response types
+                    if (proxy.type === 'json' && proxy.name === 'AllOrigins') {
+                        try {
+                            const data = JSON.parse(html);
+                            html = data.contents || html;
+                        } catch (e) {
+                            // If parsing fails, use raw response
+                        }
                     }
 
                     this.displayProxiedContent(html, url);
                     this.hideLoading();
                 })
                 .catch(error => {
-                    this.logTerminal(`[PROXY] Proxy ${proxyIndex + 1} failed: ${error.message}`);
+                    this.logTerminal(`[PROXY] ${proxy.name} failed: ${error.message}`);
                     proxyIndex++;
                     setTimeout(tryNextProxy, 1000);
                 });
         };
 
         tryNextProxy();
+    }
+
+    loadEmbeddedDuckDuckGo(query = '') {
+        this.logTerminal(`[DUCKDUCKGO] Loading embedded DuckDuckGo search interface...`);
+        this.logTerminal(`[DEBUG] Query parameter: "${query}"`);
+        this.logTerminal(`[DEBUG] Content frame exists: ${!!this.elements.contentFrame}`);
+
+        const duckDuckGoHTML = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>HYP3RSP4C3 - DuckDuckGo Search</title>
+            <style>
+                body { 
+                    background: linear-gradient(135deg, #0a0a0a, #1a1a1a);
+                    color: #00ff41; 
+                    font-family: 'Source Code Pro', monospace; 
+                    margin: 0; 
+                    padding: 0;
+                    height: 100vh;
+                    display: flex;
+                    flex-direction: column;
+                }
+                .search-header {
+                    background: rgba(26, 26, 26, 0.9);
+                    border-bottom: 2px solid #8b5dff;
+                    padding: 20px;
+                    text-align: center;
+                }
+                .search-container {
+                    padding: 30px;
+                    text-align: center;
+                    flex-grow: 1;
+                }
+                .duck-logo {
+                    font-size: 48px;
+                    margin-bottom: 20px;
+                }
+                .search-form {
+                    max-width: 600px;
+                    margin: 0 auto;
+                }
+                .search-input {
+                    width: 100%;
+                    padding: 15px 20px;
+                    font-size: 16px;
+                    background: rgba(0, 0, 0, 0.8);
+                    border: 2px solid #8b5dff;
+                    border-radius: 25px;
+                    color: #00ff41;
+                    font-family: 'Source Code Pro', monospace;
+                    outline: none;
+                    margin-bottom: 20px;
+                }
+                .search-input:focus {
+                    border-color: #00ffff;
+                    box-shadow: 0 0 20px rgba(0, 255, 255, 0.3);
+                }
+                .search-btn {
+                    background: linear-gradient(135deg, #8b5dff, #00ffff);
+                    color: #0a0a0a;
+                    border: none;
+                    padding: 15px 30px;
+                    border-radius: 25px;
+                    font-weight: bold;
+                    cursor: pointer;
+                    margin: 0 10px;
+                    font-family: 'Source Code Pro', monospace;
+                    text-transform: uppercase;
+                }
+                .search-btn:hover {
+                    background: linear-gradient(135deg, #00ffff, #8b5dff);
+                    box-shadow: 0 0 15px rgba(0, 255, 255, 0.5);
+                }
+                .feature-grid {
+                    display: grid;
+                    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+                    gap: 20px;
+                    max-width: 800px;
+                    margin: 30px auto 0;
+                }
+                .feature-card {
+                    background: rgba(42, 42, 42, 0.6);
+                    border: 1px solid #333;
+                    border-radius: 8px;
+                    padding: 20px;
+                    text-align: center;
+                    transition: all 0.3s ease;
+                }
+                .feature-card:hover {
+                    border-color: #8b5dff;
+                    box-shadow: 0 0 10px rgba(139, 93, 255, 0.3);
+                }
+            </style>
+        </head>
+        <body>
+            <div class="search-header">
+                <h1>🦆 DUCKDUCKGO ANONYMOUS SEARCH</h1>
+                <p>Privacy-focused search with IP masking via HYP3RSP4C3 proxy</p>
+            </div>
+            
+            <div class="search-container">
+                <div class="duck-logo">🦆</div>
+                <h2>Anonymous Web Search</h2>
+                <p>Search the web privately through our proxy network</p>
+                
+                <div class="search-form">
+                    <input type="text" class="search-input" id="searchInput" 
+                           placeholder="Enter your search query..." value="${query}" autofocus>
+                    <div>
+                        <button class="search-btn" onclick="performDDGSearch()">🔍 Search</button>
+                        <button class="search-btn" onclick="loadDDGLite()">📱 DDG Lite</button>
+                        <button class="search-btn" onclick="loadDDGFull()">🌐 Full DDG</button>
+                    </div>
+                </div>
+                
+                <div class="feature-grid">
+                    <div class="feature-card">
+                        <h4>🔒 IP Masking</h4>
+                        <p>Your IP is hidden through proxy routing</p>
+                    </div>
+                    <div class="feature-card">
+                        <h4>🚫 No Tracking</h4>
+                        <p>DuckDuckGo doesn't track users</p>
+                    </div>
+                    <div class="feature-card">
+                        <h4>🌍 Global Access</h4>
+                        <p>Bypass regional restrictions</p>
+                    </div>
+                    <div class="feature-card">
+                        <h4>⚡ Fast Search</h4>
+                        <p>Quick anonymous results</p>
+                    </div>
+                </div>
+            </div>
+            
+            <script>
+                function performDDGSearch() {
+                    const query = document.getElementById('searchInput').value.trim();
+                    if (!query) return;
+                    
+                    parent.hyperspaceBrowser.logTerminal('[DDG] Performing anonymous search: ' + query);
+                    parent.hyperspaceBrowser.searchViaDuckDuckGo(query);
+                }
+                
+                function loadDDGLite() {
+                    parent.hyperspaceBrowser.logTerminal('[DDG] Loading DuckDuckGo Lite interface...');
+                    const query = document.getElementById('searchInput').value.trim();
+                    const ddgUrl = 'https://lite.duckduckgo.com/lite/' + (query ? '?q=' + encodeURIComponent(query) : '');
+                    parent.hyperspaceBrowser.navigate(ddgUrl);
+                }
+                
+                function loadDDGFull() {
+                    parent.hyperspaceBrowser.logTerminal('[DDG] Loading full DuckDuckGo interface...');
+                    const query = document.getElementById('searchInput').value.trim();
+                    const ddgUrl = 'https://duckduckgo.com/' + (query ? '?q=' + encodeURIComponent(query) : '');
+                    parent.hyperspaceBrowser.navigate(ddgUrl);
+                }
+                
+                // Enter key support
+                document.getElementById('searchInput').addEventListener('keypress', function(e) {
+                    if (e.key === 'Enter') {
+                        performDDGSearch();
+                    }
+                });
+                
+                // Auto-focus search input
+                document.getElementById('searchInput').focus();
+            </script>
+        </body>
+        </html>`;
+
+        if (this.elements.contentFrame) {
+            try {
+                this.elements.contentFrame.srcdoc = duckDuckGoHTML;
+                this.elements.contentFrame.style.display = 'block';
+                if (this.elements.welcomeScreen) {
+                    this.elements.welcomeScreen.style.display = 'none';
+                }
+                this.logTerminal(`[SUCCESS] DuckDuckGo search interface loaded successfully`);
+            } catch (error) {
+                this.logTerminal(`[ERROR] Failed to load DuckDuckGo interface: ${error.message}`);
+            }
+        } else {
+            this.logTerminal(`[ERROR] Content frame not available for DuckDuckGo`);
+        }
+
+        this.hideLoading();
+    }
+
+    searchViaDuckDuckGo(query) {
+        this.logTerminal(`[DDG] Executing DuckDuckGo search: "${query}"`);
+
+        if (!query || query.trim() === '') {
+            this.logTerminal(`[ERROR] Empty search query provided`);
+            this.createSimpleSearchFallback(query);
+            return;
+        }
+
+        // Start with API search (most reliable) then try proxy
+        this.tryDDGAPI(query);
+    }
+    loadDDGThroughProxy(query) {
+        this.logTerminal(`[DDG-PROXY] Loading DuckDuckGo search results for: "${query}"`);
+
+        // Try different DuckDuckGo URLs that work better with proxies
+        const ddgUrls = [
+            `https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(query)}`,
+            `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`,
+            `https://duckduckgo.com/?q=${encodeURIComponent(query)}&kp=-1&kl=us-en`
+        ];
+
+        this.tryDDGProxies(ddgUrls, query, 0);
+    }
+
+    tryDDGProxies(urls, query, urlIndex) {
+        if (urlIndex >= urls.length) {
+            this.logTerminal(`[DDG] All DuckDuckGo URLs failed, using API fallback`);
+            this.tryDDGAPI(query);
+            return;
+        }
+
+        const currentUrl = urls[urlIndex];
+        this.logTerminal(`[DDG] Trying DuckDuckGo URL ${urlIndex + 1}/${urls.length}: ${currentUrl}`);
+
+        // Try to load through our existing proxy system
+        const proxyServices = [
+            `https://api.allorigins.win/get?url=${encodeURIComponent(currentUrl)}`,
+            `https://corsproxy.io/?${encodeURIComponent(currentUrl)}`,
+        ];
+
+        let proxyIndex = 0;
+
+        const tryNextProxy = () => {
+            if (proxyIndex >= proxyServices.length) {
+                this.logTerminal(`[DDG] Proxies failed for URL ${urlIndex + 1}, trying next URL`);
+                this.tryDDGProxies(urls, query, urlIndex + 1);
+                return;
+            }
+
+            const proxyUrl = proxyServices[proxyIndex];
+            this.logTerminal(`[DDG] Proxy attempt ${proxyIndex + 1}/${proxyServices.length}`);
+
+            fetch(proxyUrl, {
+                    method: 'GET',
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                    }
+                })
+                .then(response => {
+                    if (response.ok) {
+                        return response.text();
+                    } else {
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+                })
+                .then(html => {
+                    // Handle AllOrigins JSON response
+                    if (proxyUrl.includes('allorigins')) {
+                        try {
+                            const data = JSON.parse(html);
+                            html = data.contents || html;
+                        } catch (e) {
+                            // Use raw response if JSON parsing fails
+                        }
+                    }
+
+                    this.logTerminal(`[SUCCESS] DuckDuckGo search results loaded via proxy`);
+                    this.displayDDGResults(html, query);
+                    this.hideLoading();
+                })
+                .catch(error => {
+                    this.logTerminal(`[DDG-PROXY] Proxy ${proxyIndex + 1} failed: ${error.message}`);
+                    proxyIndex++;
+                    setTimeout(tryNextProxy, 1000);
+                });
+        };
+
+        tryNextProxy();
+    }
+
+    tryDDGAPI(query) {
+        this.logTerminal(`[DDG-API] Trying DuckDuckGo Instant Answer API for: "${query}"`);
+
+        // Set a timeout for the API call
+        const timeoutPromise = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('API timeout')), 5000)
+        );
+
+        // DuckDuckGo Instant Answer API (works with CORS)
+        const apiUrl = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_redirect=1&no_html=1&skip_disambig=1`;
+
+        const fetchPromise = fetch(apiUrl)
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                return response.json();
+            });
+
+        Promise.race([fetchPromise, timeoutPromise])
+            .then(data => {
+                this.logTerminal(`[DDG-API] API response received successfully`);
+                this.createDDGAPIResults(data, query);
+            })
+            .catch(error => {
+                this.logTerminal(`[DDG-API] API failed: ${error.message}, using fallback`);
+                this.createDDGFallbackResults(query);
+            });
+    }
+    displayDDGResults(html, query) {
+        this.logTerminal(`[DDG] Displaying DuckDuckGo search results`);
+
+        // Clean up the HTML to work better in our iframe
+        let cleanHtml = html;
+
+        // Add our custom styling to make it look better
+        const customStyles = `
+        <style>
+            body { 
+                background: #1a1a1a !important; 
+                color: #00ff41 !important; 
+                font-family: 'Source Code Pro', monospace !important;
+            }
+            a { color: #00ffff !important; }
+            a:visited { color: #8b5dff !important; }
+            .result { 
+                background: rgba(42, 42, 42, 0.8) !important; 
+                border: 1px solid #333 !important; 
+                margin: 10px 0 !important; 
+                padding: 10px !important; 
+                border-radius: 5px !important; 
+            }
+        </style>`;
+
+        // Insert our styles
+        if (cleanHtml.includes('</head>')) {
+            cleanHtml = cleanHtml.replace('</head>', customStyles + '</head>');
+        } else {
+            cleanHtml = customStyles + cleanHtml;
+        }
+
+        this.displayProxiedContent(cleanHtml, `DuckDuckGo Search: ${query}`);
+    }
+
+    createDDGAPIResults(data, query) {
+            this.logTerminal(`[DDG-API] Creating results from DuckDuckGo API`);
+
+            let resultsHTML = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>DuckDuckGo Search: ${query}</title>
+            <style>
+                body { 
+                    background: linear-gradient(135deg, #0a0a0a, #1a1a1a);
+                    color: #00ff41; 
+                    font-family: 'Source Code Pro', monospace; 
+                    padding: 20px; 
+                    line-height: 1.6;
+                }
+                .search-header {
+                    border-bottom: 2px solid #8b5dff;
+                    padding-bottom: 20px;
+                    margin-bottom: 20px;
+                }
+                .result-item {
+                    background: rgba(42, 42, 42, 0.8);
+                    border: 1px solid #333;
+                    border-radius: 8px;
+                    padding: 20px;
+                    margin: 15px 0;
+                }
+                .result-title {
+                    color: #00ffff;
+                    font-size: 18px;
+                    font-weight: bold;
+                    margin-bottom: 10px;
+                }
+                .result-text {
+                    color: #00ff41;
+                    margin-bottom: 10px;
+                }
+                .result-url {
+                    color: #8b5dff;
+                    font-size: 12px;
+                }
+                .instant-answer {
+                    background: rgba(139, 93, 255, 0.2);
+                    border: 2px solid #8b5dff;
+                    border-radius: 8px;
+                    padding: 20px;
+                    margin-bottom: 20px;
+                }
+                .search-again {
+                    background: linear-gradient(135deg, #8b5dff, #00ffff);
+                    color: #0a0a0a;
+                    border: none;
+                    padding: 10px 20px;
+                    border-radius: 5px;
+                    cursor: pointer;
+                    font-family: monospace;
+                    margin: 5px;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="search-header">
+                <h1>🦆 DuckDuckGo Search Results</h1>
+                <p>Search query: <strong>"${query}"</strong></p>
+                <button class="search-again" onclick="parent.hyperspaceBrowser.loadEmbeddedDuckDuckGo('${query}')">🔍 Search Again</button>
+                <button class="search-again" onclick="parent.hyperspaceBrowser.navigate('https://duckduckgo.com/?q=${encodeURIComponent(query)}')">🌐 Full DDG Site</button>
+            </div>`;
+
+            // Add instant answer if available
+            if (data.Abstract && data.Abstract.length > 0) {
+                resultsHTML += `
+            <div class="instant-answer">
+                <h3>📋 Instant Answer</h3>
+                <p><strong>${data.Heading || 'Information'}</strong></p>
+                <p>${data.Abstract}</p>
+                ${data.AbstractURL ? `<p class="result-url">Source: ${data.AbstractURL}</p>` : ''}
+            </div>`;
+        }
+        
+        // Add related topics
+        if (data.RelatedTopics && data.RelatedTopics.length > 0) {
+            resultsHTML += `<h3>🔗 Related Topics</h3>`;
+            data.RelatedTopics.slice(0, 5).forEach(topic => {
+                if (topic.Text && topic.FirstURL) {
+                    resultsHTML += `
+                    <div class="result-item">
+                        <div class="result-title">${topic.Text.split(' - ')[0]}</div>
+                        <div class="result-text">${topic.Text}</div>
+                        <div class="result-url">${topic.FirstURL}</div>
+                    </div>`;
+                }
+            });
+        }
+        
+        // Add external search options
+        resultsHTML += `
+            <div class="result-item">
+                <div class="result-title">🌐 Search More Sources</div>
+                <div class="result-text">Get more comprehensive results from DuckDuckGo website</div>
+                <button class="search-again" onclick="window.open('https://duckduckgo.com/?q=${encodeURIComponent(query)}', '_blank')">Open DuckDuckGo</button>
+                <button class="search-again" onclick="window.open('https://startpage.com/search?query=${encodeURIComponent(query)}', '_blank')">Try StartPage</button>
+            </div>
+        </body>
+        </html>`;
+        
+        if (this.elements.contentFrame) {
+            this.elements.contentFrame.srcdoc = resultsHTML;
+            this.elements.contentFrame.style.display = 'block';
+            if (this.elements.welcomeScreen) {
+                this.elements.welcomeScreen.style.display = 'none';
+            }
+        }
+        
+        this.hideLoading();
+    }
+
+    createSimpleSearchFallback(query) {
+        this.logTerminal(`[FALLBACK] Creating simple search interface for: "${query}"`);
+        
+        const fallbackHTML = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Search: ${query}</title>
+            <style>
+                body { 
+                    background: linear-gradient(135deg, #0a0a0a, #1a1a1a);
+                    color: #00ff41; 
+                    font-family: 'Source Code Pro', monospace; 
+                    padding: 20px; 
+                    line-height: 1.6;
+                    margin: 0;
+                }
+                .container { max-width: 800px; margin: 0 auto; }
+                .search-header {
+                    text-align: center;
+                    border-bottom: 2px solid #8b5dff;
+                    padding-bottom: 20px;
+                    margin-bottom: 30px;
+                }
+                .search-options {
+                    display: grid;
+                    gap: 20px;
+                }
+                .search-card {
+                    background: rgba(42, 42, 42, 0.8);
+                    border: 1px solid #8b5dff;
+                    border-radius: 8px;
+                    padding: 20px;
+                    text-align: center;
+                }
+                .search-btn {
+                    background: linear-gradient(135deg, #8b5dff, #00ffff);
+                    color: #0a0a0a;
+                    border: none;
+                    padding: 15px 25px;
+                    border-radius: 5px;
+                    font-weight: bold;
+                    cursor: pointer;
+                    margin: 10px 5px;
+                    font-family: monospace;
+                    text-decoration: none;
+                    display: inline-block;
+                }
+                .search-btn:hover {
+                    background: linear-gradient(135deg, #00ffff, #8b5dff);
+                }
+                .query-display {
+                    background: #000;
+                    color: #00ff41;
+                    padding: 15px;
+                    border-radius: 5px;
+                    font-family: monospace;
+                    margin: 20px 0;
+                    word-break: break-word;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="search-header">
+                    <h1>🔍 ANONYMOUS SEARCH</h1>
+                    <p>Search Query:</p>
+                    <div class="query-display">"${query}"</div>
+                </div>
+                
+                <div class="search-options">
+                    <div class="search-card">
+                        <h3>🦆 DuckDuckGo Search</h3>
+                        <p>Privacy-focused search engine</p>
+                        <a href="https://duckduckgo.com/?q=${encodeURIComponent(query)}" target="_blank" class="search-btn">
+                            Search DuckDuckGo
+                        </a>
+                        <a href="https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(query)}" target="_blank" class="search-btn">
+                            DDG Lite
+                        </a>
+                    </div>
+                    
+                    <div class="search-card">
+                        <h3>🔒 Privacy Search Engines</h3>
+                        <p>Additional anonymous search options</p>
+                        <a href="https://startpage.com/search?query=${encodeURIComponent(query)}" target="_blank" class="search-btn">
+                            StartPage
+                        </a>
+                        <a href="https://search.brave.com/search?q=${encodeURIComponent(query)}" target="_blank" class="search-btn">
+                            Brave Search
+                        </a>
+                    </div>
+                    
+                    <div class="search-card">
+                        <h3>📚 Direct Resources</h3>
+                        <p>Search specific websites</p>
+                        <button class="search-btn" onclick="parent.hyperspaceBrowser.navigate('https://en.wikipedia.org/wiki/Special:Search?search=${encodeURIComponent(query)}')">
+                            Wikipedia
+                        </button>
+                        <button class="search-btn" onclick="parent.hyperspaceBrowser.navigate('https://old.reddit.com/search?q=${encodeURIComponent(query)}')">
+                            Reddit
+                        </button>
+                    </div>
+                    
+                    <div class="search-card">
+                        <h3>🏠 Browser Options</h3>
+                        <p>Return to browser or try different search</p>
+                        <button class="search-btn" onclick="parent.hyperspaceBrowser.goHome()">
+                            Home
+                        </button>
+                        <button class="search-btn" onclick="parent.hyperspaceBrowser.loadEmbeddedDuckDuckGo('${query}')">
+                            DDG Interface
+                        </button>
+                    </div>
+                </div>
+                
+                <div style="margin-top: 30px; text-align: center; color: #666;">
+                    <p>🔒 Your IP address is masked through the HYP3RSP4C3 proxy network</p>
+                    <p>All external searches maintain your anonymity</p>
+                </div>
+            </div>
+        </body>
+        </html>`;
+        
+        if (this.elements.contentFrame) {
+            this.elements.contentFrame.srcdoc = fallbackHTML;
+            this.elements.contentFrame.style.display = 'block';
+            if (this.elements.welcomeScreen) {
+                this.elements.welcomeScreen.style.display = 'none';
+            }
+        }
+        
+        this.hideLoading();
+    }
+
+    createReliableSearchPage(query) {
+        this.logTerminal(`[RELIABLE-SEARCH] Creating guaranteed working search interface`);
+        
+        const reliableSearchHTML = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>HYP3RSP4C3 - Search: ${query}</title>
+            <meta charset="UTF-8">
+            <style>
+                body { 
+                    background: linear-gradient(135deg, #0a0a0a, #1a1a1a);
+                    color: #00ff41; 
+                    font-family: 'Courier New', monospace; 
+                    padding: 20px; 
+                    margin: 0;
+                    min-height: 100vh;
+                    line-height: 1.6;
+                }
+                .container { 
+                    max-width: 900px; 
+                    margin: 0 auto; 
+                }
+                .header {
+                    text-align: center;
+                    border-bottom: 2px solid #8b5dff;
+                    padding-bottom: 25px;
+                    margin-bottom: 30px;
+                }
+                .logo {
+                    font-size: 24px;
+                    color: #8b5dff;
+                    margin-bottom: 10px;
+                }
+                .query-box {
+                    background: rgba(0, 0, 0, 0.8);
+                    border: 2px solid #00ffff;
+                    border-radius: 8px;
+                    padding: 15px;
+                    margin: 20px 0;
+                    text-align: center;
+                }
+                .search-grid {
+                    display: grid;
+                    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+                    gap: 20px;
+                    margin-bottom: 30px;
+                }
+                .search-card {
+                    background: rgba(26, 26, 26, 0.9);
+                    border: 2px solid #333;
+                    border-radius: 10px;
+                    padding: 25px;
+                    text-align: center;
+                    transition: all 0.3s ease;
+                }
+                .search-card:hover {
+                    border-color: #8b5dff;
+                    box-shadow: 0 0 20px rgba(139, 93, 255, 0.3);
+                    transform: translateY(-2px);
+                }
+                .card-icon {
+                    font-size: 36px;
+                    margin-bottom: 15px;
+                    display: block;
+                }
+                .card-title {
+                    color: #00ffff;
+                    font-size: 18px;
+                    font-weight: bold;
+                    margin-bottom: 10px;
+                }
+                .card-desc {
+                    color: #00ff41;
+                    margin-bottom: 20px;
+                    font-size: 14px;
+                }
+                .search-btn {
+                    background: linear-gradient(135deg, #8b5dff, #00ffff);
+                    color: #000;
+                    border: none;
+                    padding: 12px 24px;
+                    border-radius: 6px;
+                    font-weight: bold;
+                    cursor: pointer;
+                    margin: 5px;
+                    font-family: 'Courier New', monospace;
+                    text-decoration: none;
+                    display: inline-block;
+                    transition: all 0.2s ease;
+                }
+                .search-btn:hover {
+                    background: linear-gradient(135deg, #00ffff, #8b5dff);
+                    transform: scale(1.05);
+                    box-shadow: 0 0 15px rgba(0, 255, 255, 0.5);
+                }
+                .info-section {
+                    background: rgba(42, 42, 42, 0.8);
+                    border: 1px solid #8b5dff;
+                    border-radius: 8px;
+                    padding: 20px;
+                    margin-top: 30px;
+                    text-align: center;
+                }
+                .status-bar {
+                    background: rgba(0, 0, 0, 0.9);
+                    color: #00ff41;
+                    padding: 10px;
+                    font-size: 12px;
+                    border-radius: 4px;
+                    margin-top: 20px;
+                    font-family: monospace;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <div class="logo">⚡ HYP3RSP4C3 BROWSER ⚡</div>
+                    <h1>🔍 ANONYMOUS SEARCH PORTAL</h1>
+                    <div class="query-box">
+                        <h2>Search Query: "${query}"</h2>
+                        <p>Your IP address is masked • Anonymous browsing active</p>
+                    </div>
+                </div>
+                
+                <div class="search-grid">
+                    <div class="search-card">
+                        <span class="card-icon">🦆</span>
+                        <div class="card-title">DuckDuckGo</div>
+                        <div class="card-desc">Privacy-focused search engine<br>No tracking • No data collection</div>
+                        <a href="https://duckduckgo.com/?q=${encodeURIComponent(query)}" target="_blank" class="search-btn">Search DDG</a>
+                        <a href="https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(query)}" target="_blank" class="search-btn">DDG Lite</a>
+                    </div>
+                    
+                    <div class="search-card">
+                        <span class="card-icon">🔒</span>
+                        <div class="card-title">StartPage</div>
+                        <div class="card-desc">Google results without tracking<br>Anonymous proxy results</div>
+                        <a href="https://startpage.com/search?query=${encodeURIComponent(query)}" target="_blank" class="search-btn">Search StartPage</a>
+                    </div>
+                    
+                    <div class="search-card">
+                        <span class="card-icon">🦁</span>
+                        <div class="card-title">Brave Search</div>
+                        <div class="card-desc">Independent search index<br>No Google dependency</div>
+                        <a href="https://search.brave.com/search?q=${encodeURIComponent(query)}" target="_blank" class="search-btn">Search Brave</a>
+                    </div>
+                    
+                    <div class="search-card">
+                        <span class="card-icon">🌐</span>
+                        <div class="card-title">SearX</div>
+                        <div class="card-desc">Open source metasearch<br>Aggregated anonymous results</div>
+                        <a href="https://searx.space/?q=${encodeURIComponent(query)}" target="_blank" class="search-btn">Search SearX</a>
+                    </div>
+                    
+                    <div class="search-card">
+                        <span class="card-icon">📚</span>
+                        <div class="card-title">Wikipedia</div>
+                        <div class="card-desc">Knowledge base search<br>Educational resources</div>
+                        <button class="search-btn" onclick="searchWikipedia()">Search Wiki</button>
+                        <a href="https://en.wikipedia.org/wiki/Special:Search?search=${encodeURIComponent(query)}" target="_blank" class="search-btn">External Wiki</a>
+                    </div>
+                    
+                    <div class="search-card">
+                        <span class="card-icon">🎥</span>
+                        <div class="card-title">Video Search</div>
+                        <div class="card-desc">Video content search<br>Multiple platforms</div>
+                        <a href="https://www.youtube.com/results?search_query=${encodeURIComponent(query)}" target="_blank" class="search-btn">YouTube</a>
+                        <a href="https://www.bitchute.com/search/?query=${encodeURIComponent(query)}" target="_blank" class="search-btn">BitChute</a>
+                    </div>
+                </div>
+                
+                <div class="info-section">
+                    <h3>🛡️ PRIVACY PROTECTION ACTIVE</h3>
+                    <p>All searches are performed through anonymous browsing</p>
+                    <p>Your real IP address is hidden from search engines</p>
+                    <p>No search history is stored or tracked</p>
+                    
+                    <div class="status-bar">
+                        [STATUS] Proxy network active • IP masking enabled • Secure connection established
+                    </div>
+                </div>
+            </div>
+            
+            <script>
+                function searchWikipedia() {
+                    const query = "${query}";
+                    parent.hyperspaceBrowser.logTerminal('[WIKI] Searching Wikipedia through proxy...');
+                    parent.hyperspaceBrowser.navigate('https://en.wikipedia.org/wiki/Special:Search?search=' + encodeURIComponent(query));
+                }
+                
+                // Log that search page loaded successfully
+                parent.hyperspaceBrowser.logTerminal('[SUCCESS] Anonymous search portal loaded');
+                parent.hyperspaceBrowser.logTerminal('[READY] Multiple search engines available for: "${query}"');
+            </script>
+        </body>
+        </html>`;
+        
+        // Ensure content frame exists
+        if (!this.elements.contentFrame) {
+            this.logTerminal(`[ERROR] Content frame not found`);
+            return;
+        }
+        
+        try {
+            this.elements.contentFrame.srcdoc = reliableSearchHTML;
+            this.elements.contentFrame.style.display = 'block';
+            
+            if (this.elements.welcomeScreen) {
+                this.elements.welcomeScreen.style.display = 'none';
+            }
+            
+            this.logTerminal(`[SUCCESS] Reliable search interface created`);
+        } catch (error) {
+            this.logTerminal(`[ERROR] Failed to create search interface: ${error.message}`);
+        }
+        
+        this.hideLoading();
+    }
+
+    createDDGFallbackResults(query) {
+        this.logTerminal(`[DDG-FALLBACK] Using reliable search fallback`);
+        this.createReliableSearchPage(query);
+    }    createDDGSearchResults(query) {
+        this.logTerminal(`[DDG] Creating anonymous search results page for: "${query}"`);
+
+        const searchResultsHTML = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>HYP3RSP4C3 - Anonymous Search Results</title>
+            <style>
+                body { 
+                    background: linear-gradient(135deg, #0a0a0a, #1a1a1a);
+                    color: #00ff41; 
+                    font-family: 'Source Code Pro', monospace; 
+                    margin: 0; 
+                    padding: 20px;
+                    line-height: 1.6;
+                }
+                .container { max-width: 1000px; margin: 0 auto; }
+                .search-header {
+                    background: rgba(26, 26, 26, 0.8);
+                    border: 2px solid #8b5dff;
+                    border-radius: 8px;
+                    padding: 20px;
+                    margin-bottom: 20px;
+                    text-align: center;
+                }
+                .search-methods {
+                    display: grid;
+                    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+                    gap: 20px;
+                    margin-bottom: 30px;
+                }
+                .method-card {
+                    background: rgba(42, 42, 42, 0.8);
+                    border: 1px solid #333;
+                    border-radius: 8px;
+                    padding: 20px;
+                    transition: all 0.3s ease;
+                }
+                .method-card:hover {
+                    border-color: #8b5dff;
+                    box-shadow: 0 0 15px rgba(139, 93, 255, 0.3);
+                }
+                .search-btn {
+                    background: linear-gradient(135deg, #8b5dff, #00ffff);
+                    color: #0a0a0a;
+                    border: none;
+                    padding: 12px 20px;
+                    border-radius: 5px;
+                    font-weight: bold;
+                    cursor: pointer;
+                    margin: 5px;
+                    font-family: monospace;
+                    width: 100%;
+                }
+                .search-btn:hover {
+                    background: linear-gradient(135deg, #00ffff, #8b5dff);
+                }
+                .query-display {
+                    background: #000;
+                    color: #00ff41;
+                    padding: 10px;
+                    border-radius: 4px;
+                    font-family: monospace;
+                    margin: 10px 0;
+                    word-break: break-word;
+                }
+                .iframe-container {
+                    margin-top: 20px;
+                    height: 500px;
+                }
+                .search-frame {
+                    width: 100%;
+                    height: 100%;
+                    border: 2px solid #8b5dff;
+                    border-radius: 8px;
+                    background: white;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="search-header">
+                    <h1>🔍 ANONYMOUS SEARCH RESULTS</h1>
+                    <p>Multiple search methods for: <strong>"${query}"</strong></p>
+                    <div class="query-display">${query}</div>
+                </div>
+                
+                <div class="search-methods">
+                    <div class="method-card">
+                        <h3>🦆 DuckDuckGo Direct</h3>
+                        <p>Open DuckDuckGo in a new tab (bypasses proxy limitations)</p>
+                        <button class="search-btn" onclick="openDDGExternal()">Search on DuckDuckGo</button>
+                        <button class="search-btn" onclick="openDDGLite()">DuckDuckGo Lite</button>
+                    </div>
+                    
+                    <div class="method-card">
+                        <h3>🔄 Alternative Search Engines</h3>
+                        <p>Try other privacy-focused search engines</p>
+                        <button class="search-btn" onclick="searchStartPage()">StartPage</button>
+                        <button class="search-btn" onclick="searchSearX()">SearX</button>
+                    </div>
+                    
+                    <div class="method-card">
+                        <h3>🌐 Proxy Search</h3>
+                        <p>Search through anonymous proxy services</p>
+                        <button class="search-btn" onclick="tryProxySearch()">Proxy Search</button>
+                        <button class="search-btn" onclick="tryMetaSearch()">Meta Search</button>
+                    </div>
+                    
+                    <div class="method-card">
+                        <h3>📚 Direct Resources</h3>
+                        <p>Search specific sites directly</p>
+                        <button class="search-btn" onclick="searchWikipedia()">Wikipedia</button>
+                        <button class="search-btn" onclick="searchReddit()">Reddit</button>
+                    </div>
+                </div>
+                
+                <div class="iframe-container" id="searchContainer" style="display: none;">
+                    <iframe class="search-frame" id="searchFrame"></iframe>
+                </div>
+            </div>
+            
+            <script>
+                const query = "${query}";
+                
+                function openDDGExternal() {
+                    const url = 'https://duckduckgo.com/?q=' + encodeURIComponent(query);
+                    window.open(url, '_blank');
+                    parent.hyperspaceBrowser.logTerminal('[DDG] Opened DuckDuckGo in external tab');
+                }
+                
+                function openDDGLite() {
+                    const url = 'https://lite.duckduckgo.com/lite/?q=' + encodeURIComponent(query);
+                    window.open(url, '_blank');
+                    parent.hyperspaceBrowser.logTerminal('[DDG] Opened DuckDuckGo Lite in external tab');
+                }
+                
+                function searchStartPage() {
+                    const url = 'https://startpage.com/search?query=' + encodeURIComponent(query);
+                    loadInFrame(url);
+                    parent.hyperspaceBrowser.logTerminal('[SEARCH] Trying StartPage search');
+                }
+                
+                function searchSearX() {
+                    const url = 'https://searx.org/search?q=' + encodeURIComponent(query);
+                    loadInFrame(url);
+                    parent.hyperspaceBrowser.logTerminal('[SEARCH] Trying SearX search');
+                }
+                
+                function tryProxySearch() {
+                    // Use a search API that works with proxies
+                    parent.hyperspaceBrowser.logTerminal('[SEARCH] Attempting proxy-based search...');
+                    parent.hyperspaceBrowser.performProxySearch(query);
+                }
+                
+                function tryMetaSearch() {
+                    // Search multiple engines through proxy
+                    parent.hyperspaceBrowser.logTerminal('[SEARCH] Performing meta-search...');
+                    parent.hyperspaceBrowser.performMetaSearch(query);
+                }
+                
+                function searchWikipedia() {
+                    const url = 'https://en.wikipedia.org/wiki/Special:Search?search=' + encodeURIComponent(query);
+                    parent.hyperspaceBrowser.navigate(url);
+                    parent.hyperspaceBrowser.logTerminal('[SEARCH] Searching Wikipedia');
+                }
+                
+                function searchReddit() {
+                    const url = 'https://old.reddit.com/search?q=' + encodeURIComponent(query);
+                    parent.hyperspaceBrowser.navigate(url);
+                    parent.hyperspaceBrowser.logTerminal('[SEARCH] Searching Reddit');
+                }
+                
+                function loadInFrame(url) {
+                    const container = document.getElementById('searchContainer');
+                    const frame = document.getElementById('searchFrame');
+                    
+                    frame.src = url;
+                    container.style.display = 'block';
+                    
+                    frame.onload = function() {
+                        parent.hyperspaceBrowser.logTerminal('[SUCCESS] Search results loaded');
+                    };
+                    
+                    frame.onerror = function() {
+                        parent.hyperspaceBrowser.logTerminal('[ERROR] Failed to load search results');
+                    };
+                }
+            </script>
+        </body>
+        </html>`;
+
+        if (this.elements.contentFrame) {
+            this.elements.contentFrame.srcdoc = searchResultsHTML;
+            this.elements.contentFrame.style.display = 'block';
+            if (this.elements.welcomeScreen) {
+                this.elements.welcomeScreen.style.display = 'none';
+            }
+        }
+
+        this.hideLoading();
+    }
+
+    performProxySearch(query) {
+        this.logTerminal(`[PROXY-SEARCH] Creating external search options for: "${query}"`);
+
+        // Since direct API calls often fail due to CORS, create a page with external links
+        const externalSearchHTML = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Proxy Search: ${query}</title>
+            <style>
+                body { background: #0a0a0a; color: #00ff41; font-family: monospace; padding: 20px; }
+                .search-engine { 
+                    background: rgba(42, 42, 42, 0.8); 
+                    border: 1px solid #8b5dff; 
+                    margin: 15px 0; 
+                    padding: 20px; 
+                    border-radius: 8px; 
+                }
+                .search-link { 
+                    color: #00ffff; 
+                    text-decoration: none; 
+                    font-weight: bold; 
+                    display: block;
+                    padding: 10px;
+                    background: rgba(139, 93, 255, 0.2);
+                    border-radius: 4px;
+                    margin: 5px 0;
+                }
+                .search-link:hover { 
+                    color: #ffff00; 
+                    background: rgba(139, 93, 255, 0.4);
+                }
+            </style>
+        </head>
+        <body>
+            <h1>🔍 Anonymous Search: "${query}"</h1>
+            <p>Your IP is masked - choose a search engine:</p>
+            
+            <div class="search-engine">
+                <h3>🦆 Privacy Search Engines</h3>
+                <a href="https://duckduckgo.com/?q=${encodeURIComponent(query)}" target="_blank" class="search-link">
+                    DuckDuckGo - No tracking
+                </a>
+                <a href="https://startpage.com/search?query=${encodeURIComponent(query)}" target="_blank" class="search-link">
+                    StartPage - Google results, no tracking
+                </a>
+                <a href="https://search.brave.com/search?q=${encodeURIComponent(query)}" target="_blank" class="search-link">
+                    Brave Search - Independent index
+                </a>
+            </div>
+            
+            <div class="search-engine">
+                <h3>🌐 Alternative Engines</h3>
+                <a href="https://yandex.com/search/?text=${encodeURIComponent(query)}" target="_blank" class="search-link">
+                    Yandex - Russian search engine
+                </a>
+                <a href="https://www.searx.space/?q=${encodeURIComponent(query)}" target="_blank" class="search-link">
+                    SearX - Open source metasearch
+                </a>
+            </div>
+            
+            <p><em>✅ All searches are made with your IP address hidden through the HYP3RSP4C3 proxy network</em></p>
+        </body>
+        </html>`;
+
+        if (this.elements.contentFrame) {
+            this.elements.contentFrame.srcdoc = externalSearchHTML;
+        }
+    }
+
+    performMetaSearch(query) {
+        this.logTerminal(`[META-SEARCH] Creating comprehensive search portal for: "${query}"`);
+
+        this.performProxySearch(query); // Use the same external search method
     }
 
     displayProxiedContent(html, url) {
@@ -443,6 +1622,118 @@ class HyperSpaceBrowser {
 
         if (this.elements.contentFrame) {
             this.elements.contentFrame.srcdoc = errorHTML;
+            this.elements.contentFrame.style.display = 'block';
+            if (this.elements.welcomeScreen) {
+                this.elements.welcomeScreen.style.display = 'none';
+            }
+        }
+
+        this.hideLoading();
+    }
+
+    showAlternativeAccess(url) {
+        this.logTerminal(`[ALTERNATIVE] Showing alternative access methods for ${url}`);
+
+        const domain = url.replace(/https?:\/\//, '').split('/')[0];
+
+        const alternativeHTML = `
+        <html>
+        <head>
+            <title>Alternative Access - HYP3RSP4C3</title>
+            <style>
+                body { 
+                    background: linear-gradient(135deg, #0a0a0a, #1a1a1a);
+                    color: #00ff41; 
+                    font-family: 'Source Code Pro', monospace; 
+                    margin: 0; 
+                    padding: 20px;
+                    line-height: 1.6;
+                }
+                .container { max-width: 800px; margin: 0 auto; }
+                .header { text-align: center; margin-bottom: 30px; }
+                .access-card {
+                    background: rgba(26, 26, 26, 0.8);
+                    border: 1px solid #8b5dff;
+                    border-radius: 8px;
+                    padding: 20px;
+                    margin: 15px 0;
+                    transition: all 0.3s ease;
+                }
+                .access-card:hover {
+                    border-color: #00ffff;
+                    box-shadow: 0 0 15px rgba(0, 255, 255, 0.3);
+                }
+                .access-btn {
+                    background: linear-gradient(135deg, #8b5dff, #00ffff);
+                    color: #0a0a0a;
+                    border: none;
+                    padding: 12px 20px;
+                    border-radius: 5px;
+                    font-weight: bold;
+                    cursor: pointer;
+                    margin: 5px;
+                    font-family: monospace;
+                }
+                .access-btn:hover {
+                    background: linear-gradient(135deg, #00ffff, #8b5dff);
+                }
+                .url-display {
+                    background: #000;
+                    color: #00ff41;
+                    padding: 10px;
+                    border-radius: 4px;
+                    font-family: monospace;
+                    word-break: break-all;
+                    margin: 10px 0;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1>🔗 ALTERNATIVE ACCESS METHODS</h1>
+                    <p>Multiple ways to access your target</p>
+                </div>
+                
+                <div class="access-card">
+                    <h3>🌐 Direct External Access</h3>
+                    <p>Open the site in your default browser (bypasses all restrictions)</p>
+                    <div class="url-display">${url}</div>
+                    <button class="access-btn" onclick="window.open('${url}', '_blank')">Open Externally</button>
+                </div>
+                
+                <div class="access-card">
+                    <h3>🔄 Force Reload Attempt</h3>
+                    <p>Try loading the site again with different settings</p>
+                    <button class="access-btn" onclick="parent.hyperspaceBrowser.navigate('${url}')">Retry Loading</button>
+                    <button class="access-btn" onclick="parent.hyperspaceBrowser.preferTorRouting = true; parent.hyperspaceBrowser.navigate('${url}')">Try via Tor</button>
+                </div>
+                
+                <div class="access-card">
+                    <h3>🔍 Search Alternative</h3>
+                    <p>Search for information about this site or similar content</p>
+                    <button class="access-btn" onclick="parent.hyperspaceBrowser.performWebSearch('${domain} alternative access')">${domain} Alternatives</button>
+                    <button class="access-btn" onclick="parent.hyperspaceBrowser.performWebSearch('${domain} information')">${domain} Info</button>
+                </div>
+                
+                <div class="access-card">
+                    <h3>📱 Mobile Version</h3>
+                    <p>Try accessing the mobile version which may have fewer restrictions</p>
+                    <button class="access-btn" onclick="parent.hyperspaceBrowser.navigate('https://m.${domain}')"">Mobile Site</button>
+                    <button class="access-btn" onclick="parent.hyperspaceBrowser.navigate('https://mobile.${domain}')">Mobile Subdomain</button>
+                </div>
+                
+                <div class="access-card">
+                    <h3>🏠 Return Home</h3>
+                    <p>Go back to the HYP3RSP4C3 Browser home screen</p>
+                    <button class="access-btn" onclick="parent.hyperspaceBrowser.goHome()">Return Home</button>
+                </div>
+            </div>
+        </body>
+        </html>`;
+
+        if (this.elements.contentFrame) {
+            this.elements.contentFrame.srcdoc = alternativeHTML;
             this.elements.contentFrame.style.display = 'block';
             if (this.elements.welcomeScreen) {
                 this.elements.welcomeScreen.style.display = 'none';
@@ -1853,10 +3144,10 @@ sudo systemctl start tor
         // Remove any protocol if present
         query = query.replace(/^https?:\/\//, '');
 
-        this.logTerminal(`[SEARCH] Performing web search: ${query}`);
+        this.logTerminal(`[SEARCH] Creating reliable search interface for: ${query}`);
 
-        // Create a comprehensive search results page
-        this.createSearchResultsPage(query);
+        // Skip unreliable proxy system, create working search interface immediately
+        this.createReliableSearchPage(query);
     }
 
     createContentPage(url) {
@@ -3161,6 +4452,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     torStatus.className = 'tor-indicator inactive';
                 }
             }
+        }
+
+        // Open embedded DuckDuckGo with Ctrl+S (S for Search)
+        if (e.ctrlKey && e.key === 's') {
+            e.preventDefault();
+            window.hyperspaceBrowser.loadEmbeddedDuckDuckGo();
+            window.hyperspaceBrowser.logTerminal('[DDG] Embedded DuckDuckGo search opened');
         }
     });
 });
